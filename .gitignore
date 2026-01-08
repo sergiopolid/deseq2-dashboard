@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Dash
+*.log
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data files (uncomment to exclude from git - NOT recommended for Render deployment)
+# We need data files in git for Render to access them
+# *.tsv
+# *.csv
+# data/
+
+# Environment variables
+.env
+.env.local
+
