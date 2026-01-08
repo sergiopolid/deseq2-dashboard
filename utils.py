@@ -54,22 +54,33 @@ def discover_deseq2_files() -> List[Tuple[str, str, str]]:
     
     def clean_display_name(name: str) -> str:
         """Clean and shorten display name for better readability."""
-        # Remove date prefix and _results suffix
+        # Remove _results suffix
         if "_results" in name:
             name = name.replace("_results", "")
         
-        # Remove date prefix (format: YYYYMMDD_)
+        # Extract and format date prefix (format: YYYYMMDD_)
         parts = name.split("_", 1)
+        date_str = ""
         if len(parts) > 1 and parts[0].isdigit() and len(parts[0]) == 8:
+            # Format date as YYYY-MM-DD for readability
+            date_str = parts[0]
+            date_formatted = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
             name = parts[1]
+        else:
+            # No date prefix found, use filename as-is
+            pass
         
         # Replace common patterns with shorter versions
         name = name.replace("_vs_", " vs ")
         name = name.replace("_", " ")
         
-        # Truncate if too long (max 50 chars)
-        if len(name) > 50:
-            name = name[:47] + "..."
+        # Add date prefix if present (in parentheses)
+        if date_str:
+            name = f"{date_formatted}: {name}"
+        
+        # Truncate if too long (max 55 chars to account for date)
+        if len(name) > 55:
+            name = name[:52] + "..."
         
         return name
     
