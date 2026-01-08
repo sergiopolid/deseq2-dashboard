@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation (optional - uncomment if you don't want to deploy docs)
+# *.md
+
+# Scripts (not needed for deployment)
+run_dashboard.sh
+run_with_tunnel.sh
+prepare_for_render.sh
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log

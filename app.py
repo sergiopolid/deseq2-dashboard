@@ -131,6 +131,17 @@ def create_volcano_tab():
                         debounce=True
                     ),
                     html.Br(),
+                    
+                    html.Label("Number of top genes to label:", className="fw-bold"),
+                    dbc.Input(
+                        id="volcano-n-labels",
+                        type="number",
+                        min=0,
+                        max=100,
+                        value=20,
+                        step=5
+                    ),
+                    html.Br(),
                     html.Hr(),
                     
                     html.H6("Axis Limits (optional)", className="fw-bold mt-3"),
@@ -387,13 +398,14 @@ def update_tab_content(active_tab):
      Input("volcano-fdr-slider", "value"),
      Input("volcano-lfc-slider", "value"),
      Input("volcano-gene-search", "value"),
+     Input("volcano-n-labels", "value"),
      Input("volcano-custom-axes", "value"),
      Input("volcano-xmin", "value"),
      Input("volcano-xmax", "value"),
      Input("volcano-ymin", "value"),
      Input("volcano-ymax", "value")]
 )
-def update_volcano_plot(file_path, fdr_threshold, lfc_threshold, gene_search, 
+def update_volcano_plot(file_path, fdr_threshold, lfc_threshold, gene_search, n_labels,
                          custom_axes, xmin, xmax, ymin, ymax):
     """Update volcano plot and table based on controls."""
     if not file_path:
@@ -434,6 +446,16 @@ def update_volcano_plot(file_path, fdr_threshold, lfc_threshold, gene_search,
         else:
             df['significant'] = False
             df['direction'] = 'Not significant'
+        
+        # Calculate ranking for top genes (combine significance and fold change)
+        # Use regulation strength: -log10(p) * |log2FC|
+        df['regulation_strength'] = df['neg_log10_p'] * df['log2FoldChange'].abs()
+        df['regulation_strength'] = df['regulation_strength'].fillna(0)
+        
+        # Sort by regulation strength and select top N for labeling
+        df_sorted = df.sort_values('regulation_strength', ascending=False)
+        n_labels = n_labels if n_labels is not None and n_labels > 0 else 0
+        top_genes = df_sorted.head(n_labels)['gene_symbol'].values if n_labels > 0 else []
         
         # Create volcano plot
         fig = go.Figure()
@@ -485,6 +507,49 @@ def update_volcano_plot(file_path, fdr_threshold, lfc_threshold, gene_search,
                               '-log10(p): %{y:.3f}<br>' +
                               '<extra></extra>'
             ))
+        
+        # Label top genes (overlay on top)
+        if len(top_genes) > 0:
+            top_df = df[df['gene_symbol'].isin(top_genes)]
+            # Split into up and down for better text positioning
+            top_up = top_df[top_df['log2FoldChange'] > 0]
+            top_down = top_df[top_df['log2FoldChange'] < 0]
+            
+            # Add up-regulated top genes
+            if len(top_up) > 0:
+                fig.add_trace(go.Scatter(
+                    x=top_up['log2FoldChange'],
+                    y=top_up['neg_log10_p'],
+                    mode='markers+text',
+                    marker=dict(color='darkred', size=8, opacity=0.9, line=dict(width=1, color='black')),
+                    text=top_up['gene_symbol'],
+                    textposition="top center",
+                    textfont=dict(size=10, color='darkred'),
+                    name=f'Top {n_labels} genes' if len(top_down) == 0 else f'Top {n_labels} genes (up)',
+                    showlegend=True,
+                    hovertemplate='<b>%{text}</b><br>' +
+                                  'log2FC: %{x:.3f}<br>' +
+                                  '-log10(p): %{y:.3f}<br>' +
+                                  '<extra></extra>'
+                ))
+            
+            # Add down-regulated top genes
+            if len(top_down) > 0:
+                fig.add_trace(go.Scatter(
+                    x=top_down['log2FoldChange'],
+                    y=top_down['neg_log10_p'],
+                    mode='markers+text',
+                    marker=dict(color='darkblue', size=8, opacity=0.9, line=dict(width=1, color='black')),
+                    text=top_down['gene_symbol'],
+                    textposition="bottom center",
+                    textfont=dict(size=10, color='darkblue'),
+                    name=f'Top {n_labels} genes' if len(top_up) == 0 else f'Top {n_labels} genes (down)',
+                    showlegend=True,
+                    hovertemplate='<b>%{text}</b><br>' +
+                                  'log2FC: %{x:.3f}<br>' +
+                                  '-log10(p): %{y:.3f}<br>' +
+                                  '<extra></extra>'
+                ))
         
         # Add reference lines
         fig.add_hline(
