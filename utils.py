@@ -207,21 +207,26 @@ def extract_degs(file_path: str, padj_threshold: float = 0.05, lfc_threshold: fl
     
     # Filter for significant DEGs
     if 'padj' in df.columns:
-        degs = df[
+        mask = (
             (df['padj'] < padj_threshold) & 
             (df['padj'].notna()) &
             (df['log2FoldChange'].abs() > lfc_threshold) &
             (df['log2FoldChange'].notna())
-        ]['gene_symbol'].tolist()
+        )
+        degs = df[mask]['gene_symbol'].tolist()
     elif 'pvalue' in df.columns:
-        degs = df[
+        mask = (
             (df['pvalue'] < padj_threshold) & 
             (df['pvalue'].notna()) &
             (df['log2FoldChange'].abs() > lfc_threshold) &
             (df['log2FoldChange'].notna())
-        ]['gene_symbol'].tolist()
+        )
+        degs = df[mask]['gene_symbol'].tolist()
     else:
         degs = []
     
-    return set(degs)
+    # Convert to set and filter out any NaN values
+    degs_set = set([str(g) for g in degs if pd.notna(g) and str(g) != 'nan'])
+    
+    return degs_set
 

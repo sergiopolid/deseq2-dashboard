@@ -987,40 +987,58 @@ def update_venn_comp3_container(n_comparisons):
     [Input("venn-n-comparisons", "value"),
      Input("venn-comp1-dropdown", "value"),
      Input("venn-comp2-dropdown", "value"),
-     Input("venn-comp3-dropdown", "value"),
      Input("venn-fdr-slider", "value"),
      Input("venn-lfc-slider", "value")],
-    [State("venn-data-store", "data")]
+    [State("venn-comp3-dropdown", "value"),
+     State("venn-data-store", "data")]
 )
-def update_venn_diagram(n_comparisons, file_path1, file_path2, file_path3, fdr_threshold, lfc_threshold, stored_data):
+def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lfc_threshold, file_path3, stored_data):
     """Update Venn diagram based on selected comparisons."""
     
     # Validate inputs
     if not file_path1 or not file_path2:
-        return html.Div("Please select at least two comparisons"), html.Div(), None
+        return html.Div([
+            dbc.Alert("Please select at least two comparisons", color="warning")
+        ]), html.Div(), None
     
     if n_comparisons == 3 and not file_path3:
-        return html.Div("Please select all three comparisons"), html.Div(), None
+        return html.Div([
+            dbc.Alert("Please select all three comparisons", color="warning")
+        ]), html.Div(), None
     
     # Check for duplicate selections
     paths = [file_path1, file_path2]
     if n_comparisons == 3:
         paths.append(file_path3)
         if len(set(paths)) != 3:
-            return html.Div("Please select three different comparisons"), html.Div(), None
+            return html.Div([
+                dbc.Alert("Please select three different comparisons", color="warning")
+            ]), html.Div(), None
     else:
         if file_path1 == file_path2:
-            return html.Div("Please select two different comparisons"), html.Div(), None
+            return html.Div([
+                dbc.Alert("Please select two different comparisons", color="warning")
+            ]), html.Div(), None
     
     try:
+        # Ensure thresholds are numbers
+        if fdr_threshold is None:
+            fdr_threshold = 0.05
+        if lfc_threshold is None:
+            lfc_threshold = 1.0
         # Extract DEGs from each comparison
-        degs1 = extract_degs(file_path1, fdr_threshold, lfc_threshold)
-        degs2 = extract_degs(file_path2, fdr_threshold, lfc_threshold)
-        names = [get_file_display_name(file_path1), get_file_display_name(file_path2)]
-        
-        if n_comparisons == 3:
-            degs3 = extract_degs(file_path3, fdr_threshold, lfc_threshold)
-            names.append(get_file_display_name(file_path3))
+        try:
+            degs1 = extract_degs(file_path1, fdr_threshold, lfc_threshold)
+            degs2 = extract_degs(file_path2, fdr_threshold, lfc_threshold)
+            names = [get_file_display_name(file_path1), get_file_display_name(file_path2)]
+            
+            if n_comparisons == 3:
+                degs3 = extract_degs(file_path3, fdr_threshold, lfc_threshold)
+                names.append(get_file_display_name(file_path3))
+        except Exception as e:
+            return html.Div([
+                dbc.Alert(f"Error extracting DEGs: {str(e)}", color="danger")
+            ]), html.Div(), None
         
         # Calculate overlaps first
         if n_comparisons == 2:
@@ -1057,7 +1075,16 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, file_path3, fdr_t
         fig, ax = plt.subplots(figsize=(10, 8))
         
         if n_comparisons == 2:
-            v = venn2([degs1, degs2], set_labels=names, ax=ax)
+            # Ensure we have sets (venn2 requires lists, not empty sets)
+            degs1_list = list(degs1) if degs1 else []
+            degs2_list = list(degs2) if degs2 else []
+            
+            try:
+                v = venn2([degs1_list, degs2_list], set_labels=names, ax=ax)
+            except Exception as e:
+                # If venn2 fails with lists, try with subset sizes
+                # venn2 subsets format: (size_set1, size_set2, intersection_size)
+                v = venn2(subsets=(len(degs1), len(degs2), len(overlap)), set_labels=names, ax=ax)
             
             # Customize colors and labels for venn2
             if v:
@@ -1088,7 +1115,19 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, file_path3, fdr_t
                         label.set_fontweight('bold')
             
         else:  # n_comparisons == 3
-            v = venn3([degs1, degs2, degs3], set_labels=names, ax=ax)
+            # Ensure we have sets (venn3 requires lists, not empty sets)
+            degs1_list = list(degs1) if degs1 else []
+            degs2_list = list(degs2) if degs2 else []
+            degs3_list = list(degs3) if degs3 else []
+            
+            try:
+                v = venn3([degs1_list, degs2_list, degs3_list], set_labels=names, ax=ax)
+            except Exception as e:
+                # If venn3 fails, try with subsets parameter
+                v = venn3(subsets=(
+                    len(only1), len(only2), len(overlap12),
+                    len(only3), len(overlap13), len(overlap23), len(overlap_all)
+                ), set_labels=names, ax=ax)
             
             # Customize colors for venn3
             if v:
@@ -1131,13 +1170,20 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, file_path3, fdr_t
                      fontsize=14, fontweight='bold', pad=20)
         
         # Convert matplotlib figure to base64 string for display
-        buf = io.BytesIO()
-        plt.savefig(buf, format='png', bbox_inches='tight', dpi=100)
-        buf.seek(0)
-        img_str = base64.b64encode(buf.read()).decode()
-        plt.close(fig)
-        
-        img_src = f'data:image/png;base64,{img_str}'
+        try:
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png', bbox_inches='tight', dpi=100)
+            buf.seek(0)
+            img_str = base64.b64encode(buf.read()).decode()
+            plt.close(fig)
+            
+            img_src = f'data:image/png;base64,{img_str}'
+            venn_img = html.Img(src=img_src, style={'width': '100%', 'height': 'auto'})
+        except Exception as e:
+            venn_img = html.Div([
+                dbc.Alert(f"Error generating image: {str(e)}", color="danger")
+            ])
+            plt.close(fig)
         
         # Create gene lists display
         if n_comparisons == 2:
@@ -1203,11 +1249,14 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, file_path3, fdr_t
                 ], width=3)
             ])
         
-        return html.Img(src=img_src, style={'width': '100%', 'height': 'auto'}), html.Div(gene_lists_html), overlaps_data
+        return venn_img, gene_lists_html, overlaps_data
         
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
         error_msg = html.Div([
-            dbc.Alert(f"Error creating Venn diagram: {str(e)}", color="danger")
+            dbc.Alert(f"Error creating Venn diagram: {str(e)}", color="danger"),
+            html.Pre(error_details, style={'fontSize': '10px', 'overflow': 'auto', 'maxHeight': '200px'})
         ])
         return error_msg, html.Div(), None
 
