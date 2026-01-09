@@ -10,12 +10,19 @@ import plotly.graph_objs as go
 import pandas as pd
 import numpy as np
 from pathlib import Path
+import base64
+import io
+from matplotlib_venn import venn2, venn3
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
+import matplotlib.pyplot as plt
 
 from utils import (
     discover_deseq2_files,
     load_deseq2_file,
     merge_comparisons,
-    get_file_display_name
+    get_file_display_name,
+    extract_degs
 )
 
 # Initialize Dash app with Bootstrap theme
@@ -58,6 +65,7 @@ app.layout = dbc.Container([
             dbc.Tabs([
                 dbc.Tab(label="Volcano Plot", tab_id="volcano-tab"),
                 dbc.Tab(label="Scatter Comparison", tab_id="scatter-tab"),
+                dbc.Tab(label="Venn Diagram", tab_id="venn-tab"),
             ], id="main-tabs", active_tab="volcano-tab")
         ])
     ], className="mb-4"),
@@ -68,6 +76,7 @@ app.layout = dbc.Container([
     # Store for selected data
     dcc.Store(id="volcano-data-store"),
     dcc.Store(id="scatter-data-store"),
+    dcc.Store(id="venn-data-store"),
     
 ], fluid=True)
 
@@ -374,6 +383,113 @@ def create_scatter_tab():
 
 
 # ============================================================================
+# Venn Diagram Tab
+# ============================================================================
+
+def create_venn_tab():
+    """Create the Venn diagram tab layout."""
+    return dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader("Controls"),
+                dbc.CardBody([
+                    html.Label("Number of Comparisons:", className="fw-bold"),
+                    dcc.Dropdown(
+                        id="venn-n-comparisons",
+                        options=[
+                            {"label": "2 Comparisons", "value": 2},
+                            {"label": "3 Comparisons", "value": 3}
+                        ],
+                        value=2,
+                        clearable=False
+                    ),
+                    html.Br(),
+                    
+                    html.Label("Comparison 1:", className="fw-bold"),
+                    dcc.Dropdown(
+                        id="venn-comp1-dropdown",
+                        options=file_options,
+                        value=file_options[0]["value"] if file_options else None,
+                        placeholder="Select first comparison...",
+                        searchable=True,
+                        clearable=False,
+                        style={"fontSize": "12px"}
+                    ),
+                    html.Br(),
+                    
+                    html.Label("Comparison 2:", className="fw-bold"),
+                    dcc.Dropdown(
+                        id="venn-comp2-dropdown",
+                        options=file_options,
+                        value=file_options[1]["value"] if len(file_options) > 1 else None,
+                        placeholder="Select second comparison...",
+                        searchable=True,
+                        clearable=False,
+                        style={"fontSize": "12px"}
+                    ),
+                    html.Div(id="venn-comp3-container"),
+                    html.Br(),
+                    
+                    html.Hr(),
+                    html.H6("DEG Thresholds", className="fw-bold mt-3"),
+                    
+                    html.Label("FDR Threshold:", className="fw-bold small"),
+                    dcc.Slider(
+                        id="venn-fdr-slider",
+                        min=0.001,
+                        max=0.35,
+                        step=0.001,
+                        value=0.05,
+                        marks={0.001: "0.001", 0.01: "0.01", 0.05: "0.05", 0.1: "0.1", 0.2: "0.2", 0.35: "0.35"},
+                        tooltip={"placement": "bottom", "always_visible": True}
+                    ),
+                    
+                    html.Label("log2FC Threshold:", className="fw-bold small mt-2"),
+                    dcc.Slider(
+                        id="venn-lfc-slider",
+                        min=0,
+                        max=3,
+                        step=0.1,
+                        value=1.0,
+                        marks={0: "0", 1: "1", 2: "2", 3: "3"},
+                        tooltip={"placement": "bottom", "always_visible": True}
+                    ),
+                    html.Br(),
+                    
+                    dbc.Button(
+                        "Export Overlap Genes",
+                        id="venn-export-btn",
+                        color="primary",
+                        className="mt-2"
+                    ),
+                    dcc.Download(id="venn-download")
+                ])
+            ], className="mb-4")
+        ], width=3),
+        
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader("Venn Diagram"),
+                dbc.CardBody([
+                    dcc.Loading(
+                        id="venn-loading",
+                        type="default",
+                        children=html.Div(id="venn-diagram-container")
+                    )
+                ])
+            ], className="mb-4"),
+            
+            dbc.Card([
+                dbc.CardHeader("Gene Lists"),
+                dbc.CardBody([
+                    html.Div(id="venn-gene-lists")
+                ])
+            ])
+        ], width=9)
+    ])
+
+
+# ============================================================================
 # Callbacks
 # ============================================================================
 
@@ -387,6 +503,8 @@ def update_tab_content(active_tab):
         return create_volcano_tab()
     elif active_tab == "scatter-tab":
         return create_scatter_tab()
+    elif active_tab == "venn-tab":
+        return create_venn_tab()
     return html.Div("Select a tab")
 
 
@@ -837,6 +955,283 @@ def export_scatter_data(n_clicks, data):
         df = pd.DataFrame(data)
         return dcc.send_data_frame(df.to_csv, "deseq2_scatter_export.csv", index=False)
     return None
+
+
+@app.callback(
+    Output("venn-comp3-container", "children"),
+    Input("venn-n-comparisons", "value")
+)
+def update_venn_comp3_container(n_comparisons):
+    """Show/hide third comparison dropdown based on number of comparisons."""
+    if n_comparisons == 3:
+        return [
+            html.Br(),
+            html.Label("Comparison 3:", className="fw-bold"),
+            dcc.Dropdown(
+                id="venn-comp3-dropdown",
+                options=file_options,
+                value=file_options[2]["value"] if len(file_options) > 2 else None,
+                placeholder="Select third comparison...",
+                searchable=True,
+                clearable=False,
+                style={"fontSize": "12px"}
+            )
+        ]
+    return []
+
+
+@app.callback(
+    [Output("venn-diagram-container", "children"),
+     Output("venn-gene-lists", "children"),
+     Output("venn-data-store", "data")],
+    [Input("venn-n-comparisons", "value"),
+     Input("venn-comp1-dropdown", "value"),
+     Input("venn-comp2-dropdown", "value"),
+     Input("venn-comp3-dropdown", "value"),
+     Input("venn-fdr-slider", "value"),
+     Input("venn-lfc-slider", "value")],
+    [State("venn-data-store", "data")]
+)
+def update_venn_diagram(n_comparisons, file_path1, file_path2, file_path3, fdr_threshold, lfc_threshold, stored_data):
+    """Update Venn diagram based on selected comparisons."""
+    
+    # Validate inputs
+    if not file_path1 or not file_path2:
+        return html.Div("Please select at least two comparisons"), html.Div(), None
+    
+    if n_comparisons == 3 and not file_path3:
+        return html.Div("Please select all three comparisons"), html.Div(), None
+    
+    # Check for duplicate selections
+    paths = [file_path1, file_path2]
+    if n_comparisons == 3:
+        paths.append(file_path3)
+        if len(set(paths)) != 3:
+            return html.Div("Please select three different comparisons"), html.Div(), None
+    else:
+        if file_path1 == file_path2:
+            return html.Div("Please select two different comparisons"), html.Div(), None
+    
+    try:
+        # Extract DEGs from each comparison
+        degs1 = extract_degs(file_path1, fdr_threshold, lfc_threshold)
+        degs2 = extract_degs(file_path2, fdr_threshold, lfc_threshold)
+        names = [get_file_display_name(file_path1), get_file_display_name(file_path2)]
+        
+        if n_comparisons == 3:
+            degs3 = extract_degs(file_path3, fdr_threshold, lfc_threshold)
+            names.append(get_file_display_name(file_path3))
+        
+        # Create Venn diagram
+        fig, ax = plt.subplots(figsize=(10, 8))
+        
+        if n_comparisons == 2:
+            v = venn2([degs1, degs2], set_labels=names, ax=ax)
+            # Color the sets
+            if v:
+                for patch in v.get_patch_values():
+                    if patch:
+                        patch.set_facecolor('#3498db')
+                        patch.set_alpha(0.6)
+                
+                # Set label colors
+                for label in v.get_label_by_id('10'):
+                    if label:
+                        label.set_text(f'Only {names[0]}\n{len(degs1 - degs2)} genes')
+                for label in v.get_label_by_id('01'):
+                    if label:
+                        label.set_text(f'Only {names[1]}\n{len(degs2 - degs1)} genes')
+                for label in v.get_label_by_id('11'):
+                    if label:
+                        label.set_text(f'Overlap\n{len(degs1 & degs2)} genes')
+            
+            # Calculate overlaps
+            only1 = degs1 - degs2
+            only2 = degs2 - degs1
+            overlap = degs1 & degs2
+            
+            overlaps_data = {
+                'only_1': list(only1),
+                'only_2': list(only2),
+                'overlap': list(overlap)
+            }
+            
+        else:  # n_comparisons == 3
+            v = venn3([degs1, degs2, degs3], set_labels=names, ax=ax)
+            # Color the sets
+            if v:
+                colors = ['#3498db', '#e74c3c', '#2ecc71']
+                for i, patch in enumerate(v.get_patch_values()):
+                    if patch:
+                        patch.set_facecolor(colors[i % 3])
+                        patch.set_alpha(0.6)
+            
+            # Calculate all overlaps
+            only1 = degs1 - degs2 - degs3
+            only2 = degs2 - degs1 - degs3
+            only3 = degs3 - degs1 - degs2
+            overlap12 = (degs1 & degs2) - degs3
+            overlap13 = (degs1 & degs3) - degs2
+            overlap23 = (degs2 & degs3) - degs1
+            overlap_all = degs1 & degs2 & degs3
+            
+            overlaps_data = {
+                'only_1': list(only1),
+                'only_2': list(only2),
+                'only_3': list(only3),
+                'overlap_12': list(overlap12),
+                'overlap_13': list(overlap13),
+                'overlap_23': list(overlap23),
+                'overlap_all': list(overlap_all)
+            }
+        
+        ax.set_title(f"Venn Diagram of DEGs\n(FDR < {fdr_threshold}, |log2FC| > {lfc_threshold})", 
+                     fontsize=14, fontweight='bold', pad=20)
+        
+        # Convert matplotlib figure to base64 string for display
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', bbox_inches='tight', dpi=100)
+        buf.seek(0)
+        img_str = base64.b64encode(buf.read()).decode()
+        plt.close(fig)
+        
+        img_src = f'data:image/png;base64,{img_str}'
+        
+        # Create gene lists display
+        if n_comparisons == 2:
+            gene_lists_html = [
+                dbc.Row([
+                    dbc.Col([
+                        html.H6(f"Only {names[0]}", className="fw-bold"),
+                        html.P(f"{len(only1)} genes", className="text-muted small"),
+                        html.Div([html.Span(gene, className="badge bg-primary me-1 mb-1") for gene in sorted(list(only1))[:50]])
+                    ], width=4),
+                    dbc.Col([
+                        html.H6("Overlap", className="fw-bold"),
+                        html.P(f"{len(overlap)} genes", className="text-muted small"),
+                        html.Div([html.Span(gene, className="badge bg-success me-1 mb-1") for gene in sorted(list(overlap))[:50]])
+                    ], width=4),
+                    dbc.Col([
+                        html.H6(f"Only {names[1]}", className="fw-bold"),
+                        html.P(f"{len(only2)} genes", className="text-muted small"),
+                        html.Div([html.Span(gene, className="badge bg-danger me-1 mb-1") for gene in sorted(list(only2))[:50]])
+                    ], width=4)
+                ])
+            ]
+        else:
+            gene_lists_html = [
+                dbc.Row([
+                    dbc.Col([
+                        html.H6(f"Only {names[0]}", className="fw-bold"),
+                        html.P(f"{len(only1)} genes", className="text-muted small"),
+                        html.Div([html.Span(gene, className="badge bg-primary me-1 mb-1") for gene in sorted(list(only1))[:30]])
+                    ], width=3),
+                    dbc.Col([
+                        html.H6(f"Only {names[1]}", className="fw-bold"),
+                        html.P(f"{len(only2)} genes", className="text-muted small"),
+                        html.Div([html.Span(gene, className="badge bg-danger me-1 mb-1") for gene in sorted(list(only2))[:30]])
+                    ], width=3),
+                    dbc.Col([
+                        html.H6(f"Only {names[2]}", className="fw-bold"),
+                        html.P(f"{len(only3)} genes", className="text-muted small"),
+                        html.Div([html.Span(gene, className="badge bg-success me-1 mb-1") for gene in sorted(list(only3))[:30]])
+                    ], width=3),
+                    dbc.Col([
+                        html.H6("All Overlap", className="fw-bold"),
+                        html.P(f"{len(overlap_all)} genes", className="text-muted small"),
+                        html.Div([html.Span(gene, className="badge bg-warning me-1 mb-1") for gene in sorted(list(overlap_all))[:30]])
+                    ], width=3)
+                ])
+            ]
+        
+        return html.Img(src=img_src, style={'width': '100%', 'height': 'auto'}), html.Div(gene_lists_html), overlaps_data
+        
+    except Exception as e:
+        error_msg = html.Div([
+            dbc.Alert(f"Error creating Venn diagram: {str(e)}", color="danger")
+        ])
+        return error_msg, html.Div(), None
+
+
+@app.callback(
+    Output("venn-download", "data"),
+    Input("venn-export-btn", "n_clicks"),
+    State("venn-data-store", "data"),
+    State("venn-n-comparisons", "value"),
+    State("venn-comp1-dropdown", "value"),
+    State("venn-comp2-dropdown", "value"),
+    State("venn-comp3-dropdown", "value"),
+    prevent_initial_call=True
+)
+def export_venn_overlaps(n_clicks, overlaps_data, n_comparisons, file_path1, file_path2, file_path3):
+    """Export overlap gene lists to CSV."""
+    if not overlaps_data:
+        return None
+    
+    try:
+        # Create a DataFrame with all overlaps
+        export_data = []
+        
+        if n_comparisons == 2:
+            names = [get_file_display_name(file_path1), get_file_display_name(file_path2)]
+            export_data.append({
+                'Category': f'Only {names[0]}',
+                'Gene_Count': len(overlaps_data['only_1']),
+                'Genes': ', '.join(sorted(overlaps_data['only_1']))
+            })
+            export_data.append({
+                'Category': f'Overlap ({names[0]} & {names[1]})',
+                'Gene_Count': len(overlaps_data['overlap']),
+                'Genes': ', '.join(sorted(overlaps_data['overlap']))
+            })
+            export_data.append({
+                'Category': f'Only {names[1]}',
+                'Gene_Count': len(overlaps_data['only_2']),
+                'Genes': ', '.join(sorted(overlaps_data['only_2']))
+            })
+        else:
+            names = [get_file_display_name(file_path1), get_file_display_name(file_path2), get_file_display_name(file_path3)]
+            export_data.append({
+                'Category': f'Only {names[0]}',
+                'Gene_Count': len(overlaps_data['only_1']),
+                'Genes': ', '.join(sorted(overlaps_data['only_1']))
+            })
+            export_data.append({
+                'Category': f'Only {names[1]}',
+                'Gene_Count': len(overlaps_data['only_2']),
+                'Genes': ', '.join(sorted(overlaps_data['only_2']))
+            })
+            export_data.append({
+                'Category': f'Only {names[2]}',
+                'Gene_Count': len(overlaps_data['only_3']),
+                'Genes': ', '.join(sorted(overlaps_data['only_3']))
+            })
+            export_data.append({
+                'Category': f'Overlap {names[0]} & {names[1]}',
+                'Gene_Count': len(overlaps_data['overlap_12']),
+                'Genes': ', '.join(sorted(overlaps_data['overlap_12']))
+            })
+            export_data.append({
+                'Category': f'Overlap {names[0]} & {names[2]}',
+                'Gene_Count': len(overlaps_data['overlap_13']),
+                'Genes': ', '.join(sorted(overlaps_data['overlap_13']))
+            })
+            export_data.append({
+                'Category': f'Overlap {names[1]} & {names[2]}',
+                'Gene_Count': len(overlaps_data['overlap_23']),
+                'Genes': ', '.join(sorted(overlaps_data['overlap_23']))
+            })
+            export_data.append({
+                'Category': f'Overlap All Three',
+                'Gene_Count': len(overlaps_data['overlap_all']),
+                'Genes': ', '.join(sorted(overlaps_data['overlap_all']))
+            })
+        
+        df = pd.DataFrame(export_data)
+        return dcc.send_data_frame(df.to_csv, "venn_diagram_overlaps.csv", index=False)
+        
+    except Exception as e:
+        return None
 
 
 # ============================================================================

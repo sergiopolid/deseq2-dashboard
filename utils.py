@@ -190,3 +190,38 @@ def get_file_display_name(file_path: str) -> str:
             return parts[1].replace("_results", "")
     return name
 
+
+def extract_degs(file_path: str, padj_threshold: float = 0.05, lfc_threshold: float = 1.0) -> set:
+    """
+    Extract differentially expressed genes (DEGs) from a DESeq2 results file.
+    
+    Args:
+        file_path: Path to DESeq2 TSV file
+        padj_threshold: Adjusted p-value threshold (default: 0.05)
+        lfc_threshold: Log2 fold change threshold (default: 1.0)
+    
+    Returns:
+        Set of gene symbols that are significantly differentially expressed
+    """
+    df = load_deseq2_file(file_path)
+    
+    # Filter for significant DEGs
+    if 'padj' in df.columns:
+        degs = df[
+            (df['padj'] < padj_threshold) & 
+            (df['padj'].notna()) &
+            (df['log2FoldChange'].abs() > lfc_threshold) &
+            (df['log2FoldChange'].notna())
+        ]['gene_symbol'].tolist()
+    elif 'pvalue' in df.columns:
+        degs = df[
+            (df['pvalue'] < padj_threshold) & 
+            (df['pvalue'].notna()) &
+            (df['log2FoldChange'].abs() > lfc_threshold) &
+            (df['log2FoldChange'].notna())
+        ]['gene_symbol'].tolist()
+    else:
+        degs = []
+    
+    return set(degs)
+
