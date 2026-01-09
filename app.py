@@ -1022,30 +1022,8 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, file_path3, fdr_t
             degs3 = extract_degs(file_path3, fdr_threshold, lfc_threshold)
             names.append(get_file_display_name(file_path3))
         
-        # Create Venn diagram
-        fig, ax = plt.subplots(figsize=(10, 8))
-        
+        # Calculate overlaps first
         if n_comparisons == 2:
-            v = venn2([degs1, degs2], set_labels=names, ax=ax)
-            # Color the sets
-            if v:
-                for patch in v.get_patch_values():
-                    if patch:
-                        patch.set_facecolor('#3498db')
-                        patch.set_alpha(0.6)
-                
-                # Set label colors
-                for label in v.get_label_by_id('10'):
-                    if label:
-                        label.set_text(f'Only {names[0]}\n{len(degs1 - degs2)} genes')
-                for label in v.get_label_by_id('01'):
-                    if label:
-                        label.set_text(f'Only {names[1]}\n{len(degs2 - degs1)} genes')
-                for label in v.get_label_by_id('11'):
-                    if label:
-                        label.set_text(f'Overlap\n{len(degs1 & degs2)} genes')
-            
-            # Calculate overlaps
             only1 = degs1 - degs2
             only2 = degs2 - degs1
             overlap = degs1 & degs2
@@ -1057,16 +1035,6 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, file_path3, fdr_t
             }
             
         else:  # n_comparisons == 3
-            v = venn3([degs1, degs2, degs3], set_labels=names, ax=ax)
-            # Color the sets
-            if v:
-                colors = ['#3498db', '#e74c3c', '#2ecc71']
-                for i, patch in enumerate(v.get_patch_values()):
-                    if patch:
-                        patch.set_facecolor(colors[i % 3])
-                        patch.set_alpha(0.6)
-            
-            # Calculate all overlaps
             only1 = degs1 - degs2 - degs3
             only2 = degs2 - degs1 - degs3
             only3 = degs3 - degs1 - degs2
@@ -1085,6 +1053,80 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, file_path3, fdr_t
                 'overlap_all': list(overlap_all)
             }
         
+        # Create Venn diagram
+        fig, ax = plt.subplots(figsize=(10, 8))
+        
+        if n_comparisons == 2:
+            v = venn2([degs1, degs2], set_labels=names, ax=ax)
+            
+            # Customize colors and labels for venn2
+            if v:
+                # Get patches and customize
+                patches = [v.get_patch_by_id('10'), v.get_patch_by_id('01'), v.get_patch_by_id('11')]
+                colors = ['#3498db', '#e74c3c', '#2ecc71']
+                
+                for i, patch in enumerate(patches):
+                    if patch:
+                        patch.set_facecolor(colors[i % 3])
+                        patch.set_alpha(0.6)
+                        patch.set_edgecolor('black')
+                        patch.set_linewidth(2)
+                
+                # Update labels with counts
+                label_ids = ['10', '01', '11']
+                label_texts = [
+                    f'{len(only1)}',
+                    f'{len(only2)}',
+                    f'{len(overlap)}'
+                ]
+                
+                for label_id, label_text in zip(label_ids, label_texts):
+                    label = v.get_label_by_id(label_id)
+                    if label:
+                        label.set_text(label_text)
+                        label.set_fontsize(12)
+                        label.set_fontweight('bold')
+            
+        else:  # n_comparisons == 3
+            v = venn3([degs1, degs2, degs3], set_labels=names, ax=ax)
+            
+            # Customize colors for venn3
+            if v:
+                colors = ['#3498db', '#e74c3c', '#2ecc71']
+                
+                # venn3 has different patch IDs
+                for i, patch_id in enumerate(['100', '010', '001', '110', '101', '011', '111']):
+                    patch = v.get_patch_by_id(patch_id)
+                    if patch:
+                        # Determine color based on which sets are involved
+                        if patch_id == '111':  # All three
+                            patch.set_facecolor('#f39c12')  # Orange for all overlap
+                        elif patch_id in ['110', '101', '011']:  # Two-way overlaps
+                            patch.set_facecolor('#95a5a6')  # Gray for two-way
+                        else:  # Single sets
+                            patch.set_facecolor(colors[i % 3])
+                        patch.set_alpha(0.6)
+                        patch.set_edgecolor('black')
+                        patch.set_linewidth(2)
+                
+                # Update labels with counts
+                label_map = {
+                    '100': len(only1),
+                    '010': len(only2),
+                    '001': len(only3),
+                    '110': len(overlap12),
+                    '101': len(overlap13),
+                    '011': len(overlap23),
+                    '111': len(overlap_all)
+                }
+                
+                for label_id, count in label_map.items():
+                    label = v.get_label_by_id(label_id)
+                    if label:
+                        label.set_text(str(count))
+                        label.set_fontsize(11)
+                        label.set_fontweight('bold')
+        
         ax.set_title(f"Venn Diagram of DEGs\n(FDR < {fdr_threshold}, |log2FC| > {lfc_threshold})", 
                      fontsize=14, fontweight='bold', pad=20)
         
@@ -1099,50 +1141,67 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, file_path3, fdr_t
         
         # Create gene lists display
         if n_comparisons == 2:
-            gene_lists_html = [
-                dbc.Row([
-                    dbc.Col([
-                        html.H6(f"Only {names[0]}", className="fw-bold"),
-                        html.P(f"{len(only1)} genes", className="text-muted small"),
-                        html.Div([html.Span(gene, className="badge bg-primary me-1 mb-1") for gene in sorted(list(only1))[:50]])
-                    ], width=4),
-                    dbc.Col([
-                        html.H6("Overlap", className="fw-bold"),
-                        html.P(f"{len(overlap)} genes", className="text-muted small"),
-                        html.Div([html.Span(gene, className="badge bg-success me-1 mb-1") for gene in sorted(list(overlap))[:50]])
-                    ], width=4),
-                    dbc.Col([
-                        html.H6(f"Only {names[1]}", className="fw-bold"),
-                        html.P(f"{len(only2)} genes", className="text-muted small"),
-                        html.Div([html.Span(gene, className="badge bg-danger me-1 mb-1") for gene in sorted(list(only2))[:50]])
-                    ], width=4)
-                ])
-            ]
+            gene_lists_html = dbc.Row([
+                dbc.Col([
+                    html.H6(f"Only {names[0]}", className="fw-bold"),
+                    html.P(f"{len(only1)} genes", className="text-muted small"),
+                    html.Div([
+                        html.Span(gene, className="badge bg-primary me-1 mb-1") 
+                        for gene in sorted(list(only1))[:50]
+                    ] if only1 else [html.P("No genes", className="text-muted")])
+                ], width=4),
+                dbc.Col([
+                    html.H6("Overlap", className="fw-bold"),
+                    html.P(f"{len(overlap)} genes", className="text-muted small"),
+                    html.Div([
+                        html.Span(gene, className="badge bg-success me-1 mb-1") 
+                        for gene in sorted(list(overlap))[:50]
+                    ] if overlap else [html.P("No genes", className="text-muted")])
+                ], width=4),
+                dbc.Col([
+                    html.H6(f"Only {names[1]}", className="fw-bold"),
+                    html.P(f"{len(only2)} genes", className="text-muted small"),
+                    html.Div([
+                        html.Span(gene, className="badge bg-danger me-1 mb-1") 
+                        for gene in sorted(list(only2))[:50]
+                    ] if only2 else [html.P("No genes", className="text-muted")])
+                ], width=4)
+            ])
         else:
-            gene_lists_html = [
-                dbc.Row([
-                    dbc.Col([
-                        html.H6(f"Only {names[0]}", className="fw-bold"),
-                        html.P(f"{len(only1)} genes", className="text-muted small"),
-                        html.Div([html.Span(gene, className="badge bg-primary me-1 mb-1") for gene in sorted(list(only1))[:30]])
-                    ], width=3),
-                    dbc.Col([
-                        html.H6(f"Only {names[1]}", className="fw-bold"),
-                        html.P(f"{len(only2)} genes", className="text-muted small"),
-                        html.Div([html.Span(gene, className="badge bg-danger me-1 mb-1") for gene in sorted(list(only2))[:30]])
-                    ], width=3),
-                    dbc.Col([
-                        html.H6(f"Only {names[2]}", className="fw-bold"),
-                        html.P(f"{len(only3)} genes", className="text-muted small"),
-                        html.Div([html.Span(gene, className="badge bg-success me-1 mb-1") for gene in sorted(list(only3))[:30]])
-                    ], width=3),
-                    dbc.Col([
-                        html.H6("All Overlap", className="fw-bold"),
-                        html.P(f"{len(overlap_all)} genes", className="text-muted small"),
-                        html.Div([html.Span(gene, className="badge bg-warning me-1 mb-1") for gene in sorted(list(overlap_all))[:30]])
-                    ], width=3)
-                ])
-            ]
+            gene_lists_html = dbc.Row([
+                dbc.Col([
+                    html.H6(f"Only {names[0]}", className="fw-bold"),
+                    html.P(f"{len(only1)} genes", className="text-muted small"),
+                    html.Div([
+                        html.Span(gene, className="badge bg-primary me-1 mb-1") 
+                        for gene in sorted(list(only1))[:30]
+                    ] if only1 else [html.P("No genes", className="text-muted")])
+                ], width=3),
+                dbc.Col([
+                    html.H6(f"Only {names[1]}", className="fw-bold"),
+                    html.P(f"{len(only2)} genes", className="text-muted small"),
+                    html.Div([
+                        html.Span(gene, className="badge bg-danger me-1 mb-1") 
+                        for gene in sorted(list(only2))[:30]
+                    ] if only2 else [html.P("No genes", className="text-muted")])
+                ], width=3),
+                dbc.Col([
+                    html.H6(f"Only {names[2]}", className="fw-bold"),
+                    html.P(f"{len(only3)} genes", className="text-muted small"),
+                    html.Div([
+                        html.Span(gene, className="badge bg-success me-1 mb-1") 
+                        for gene in sorted(list(only3))[:30]
+                    ] if only3 else [html.P("No genes", className="text-muted")])
+                ], width=3),
+                dbc.Col([
+                    html.H6("All Overlap", className="fw-bold"),
+                    html.P(f"{len(overlap_all)} genes", className="text-muted small"),
+                    html.Div([
+                        html.Span(gene, className="badge bg-warning me-1 mb-1") 
+                        for gene in sorted(list(overlap_all))[:30]
+                    ] if overlap_all else [html.P("No genes", className="text-muted")])
+                ], width=3)
+            ])
         
         return html.Img(src=img_src, style={'width': '100%', 'height': 'auto'}), html.Div(gene_lists_html), overlaps_data
         
