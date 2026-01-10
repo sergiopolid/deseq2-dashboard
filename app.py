@@ -5,8 +5,11 @@ A Dash/Plotly web application for exploring DESeq2 differential expression resul
 
 import dash
 from dash import dcc, html, Input, Output, State
-from dash import dash_table
 import dash_bootstrap_components as dbc
+try:
+    from dash import dash_table
+except ImportError:
+    import dash_table
 import plotly.graph_objs as go
 import pandas as pd
 import numpy as np
@@ -714,21 +717,54 @@ def update_volcano_plot(file_path, fdr_threshold, lfc_threshold, gene_search, n_
         fig.update_layout(**layout_dict)
         
         # Create sortable table using dash_table.DataTable
-        table_df = df[['gene_symbol', 'log2FoldChange', 'baseMean', 'pvalue', 'padj']].copy()
-        table_df = table_df.round(4)
+        # Select available columns
+        available_cols = ['gene_symbol', 'log2FoldChange']
+        if 'baseMean' in df.columns:
+            available_cols.append('baseMean')
+        if 'pvalue' in df.columns:
+            available_cols.append('pvalue')
+        if 'padj' in df.columns:
+            available_cols.append('padj')
+        
+        table_df = df[available_cols].copy()
+        
+        # Round numeric columns (skip gene_symbol which is text)
+        numeric_cols = table_df.select_dtypes(include=[np.number]).columns
+        table_df[numeric_cols] = table_df[numeric_cols].round(4)
         
         # Limit to first 2000 rows for performance
         display_df = table_df.head(2000)
         
+        # Build columns list based on available columns
+        table_columns = [
+            {"name": "Gene Symbol", "id": "gene_symbol", "type": "text"},
+            {"name": "log2FC", "id": "log2FoldChange", "type": "numeric", "format": {"specifier": ".4f"}}
+        ]
+        
+        if 'baseMean' in available_cols:
+            table_columns.append({"name": "baseMean", "id": "baseMean", "type": "numeric", "format": {"specifier": ".2f"}})
+        if 'pvalue' in available_cols:
+            table_columns.append({"name": "p-value", "id": "pvalue", "type": "numeric", "format": {"specifier": ".2e"}})
+        if 'padj' in available_cols:
+            table_columns.append({"name": "padj", "id": "padj", "type": "numeric", "format": {"specifier": ".2e"}})
+        
+        # Build conditional formatting based on available columns
+        style_data_conditional = []
+        if 'padj' in available_cols and 'log2FoldChange' in available_cols:
+            style_data_conditional = [
+                {
+                    'if': {'filter_query': '{log2FoldChange} > 0 && {padj} < 0.05'},
+                    'backgroundColor': '#ffe6e6',
+                },
+                {
+                    'if': {'filter_query': '{log2FoldChange} < 0 && {padj} < 0.05'},
+                    'backgroundColor': '#e6f3ff',
+                }
+            ]
+        
         table = dash_table.DataTable(
             data=display_df.to_dict('records'),
-            columns=[
-                {"name": "Gene Symbol", "id": "gene_symbol", "type": "text"},
-                {"name": "log2FC", "id": "log2FoldChange", "type": "numeric", "format": {"specifier": ".4f"}},
-                {"name": "baseMean", "id": "baseMean", "type": "numeric", "format": {"specifier": ".2f"}},
-                {"name": "p-value", "id": "pvalue", "type": "numeric", "format": {"specifier": ".2e"}},
-                {"name": "padj", "id": "padj", "type": "numeric", "format": {"specifier": ".2e"}}
-            ],
+            columns=table_columns,
             sort_action="native",  # Enable sorting
             sort_mode="multi",  # Allow sorting by multiple columns
             filter_action="native",  # Enable filtering
@@ -746,16 +782,7 @@ def update_volcano_plot(file_path, fdr_threshold, lfc_threshold, gene_search, n_
                 'backgroundColor': 'rgb(230, 230, 230)',
                 'fontWeight': 'bold'
             },
-            style_data_conditional=[
-                {
-                    'if': {'filter_query': '{log2FoldChange} > 0 && {padj} < 0.05'},
-                    'backgroundColor': '#ffe6e6',
-                },
-                {
-                    'if': {'filter_query': '{log2FoldChange} < 0 && {padj} < 0.05'},
-                    'backgroundColor': '#e6f3ff',
-                }
-            ],
+            style_data_conditional=style_data_conditional,
             export_format="csv",
             export_headers="display"
         )
@@ -946,7 +973,10 @@ def update_scatter_plot(file_path1, file_path2, sig_filter, n_labels, gene_searc
             table_cols.extend(['pvalue_1', 'pvalue_2'])
         
         table_df = merged[table_cols].copy()
-        table_df = table_df.round(4)
+        
+        # Round numeric columns
+        numeric_cols = table_df.select_dtypes(include=[np.number]).columns
+        table_df[numeric_cols] = table_df[numeric_cols].round(4)
         
         # Create sortable table using dash_table.DataTable
         display_df = table_df.head(2000)
