@@ -5,6 +5,7 @@ A Dash/Plotly web application for exploring DESeq2 differential expression resul
 
 import dash
 from dash import dcc, html, Input, Output, State
+from dash import dash_table
 import dash_bootstrap_components as dbc
 import plotly.graph_objs as go
 import pandas as pd
@@ -712,22 +713,56 @@ def update_volcano_plot(file_path, fdr_threshold, lfc_threshold, gene_search, n_
         
         fig.update_layout(**layout_dict)
         
-        # Create table
+        # Create sortable table using dash_table.DataTable
         table_df = df[['gene_symbol', 'log2FoldChange', 'baseMean', 'pvalue', 'padj']].copy()
         table_df = table_df.round(4)
         
-        table = dbc.Table.from_dataframe(
-            table_df.head(1000),  # Limit to first 1000 rows for performance
-            striped=True,
-            bordered=True,
-            hover=True,
-            responsive=True,
-            className="table-sm"
+        # Limit to first 2000 rows for performance
+        display_df = table_df.head(2000)
+        
+        table = dash_table.DataTable(
+            data=display_df.to_dict('records'),
+            columns=[
+                {"name": "Gene Symbol", "id": "gene_symbol", "type": "text"},
+                {"name": "log2FC", "id": "log2FoldChange", "type": "numeric", "format": {"specifier": ".4f"}},
+                {"name": "baseMean", "id": "baseMean", "type": "numeric", "format": {"specifier": ".2f"}},
+                {"name": "p-value", "id": "pvalue", "type": "numeric", "format": {"specifier": ".2e"}},
+                {"name": "padj", "id": "padj", "type": "numeric", "format": {"specifier": ".2e"}}
+            ],
+            sort_action="native",  # Enable sorting
+            sort_mode="multi",  # Allow sorting by multiple columns
+            filter_action="native",  # Enable filtering
+            page_action="native",  # Enable pagination
+            page_current=0,
+            page_size=25,
+            style_table={'overflowX': 'auto'},
+            style_cell={
+                'textAlign': 'left',
+                'padding': '10px',
+                'fontFamily': 'sans-serif',
+                'fontSize': '12px'
+            },
+            style_header={
+                'backgroundColor': 'rgb(230, 230, 230)',
+                'fontWeight': 'bold'
+            },
+            style_data_conditional=[
+                {
+                    'if': {'filter_query': '{log2FoldChange} > 0 && {padj} < 0.05'},
+                    'backgroundColor': '#ffe6e6',
+                },
+                {
+                    'if': {'filter_query': '{log2FoldChange} < 0 && {padj} < 0.05'},
+                    'backgroundColor': '#e6f3ff',
+                }
+            ],
+            export_format="csv",
+            export_headers="display"
         )
         
         table_info = html.P(
-            f"Showing {min(1000, len(table_df))} of {len(table_df)} genes. "
-            "Use gene search to filter results.",
+            f"Showing {min(2000, len(table_df))} of {len(table_df)} genes. "
+            "Click column headers to sort. Use gene search to filter results.",
             className="text-muted small"
         )
         
@@ -913,18 +948,46 @@ def update_scatter_plot(file_path1, file_path2, sig_filter, n_labels, gene_searc
         table_df = merged[table_cols].copy()
         table_df = table_df.round(4)
         
-        table = dbc.Table.from_dataframe(
-            table_df.head(1000),  # Limit to first 1000 rows
-            striped=True,
-            bordered=True,
-            hover=True,
-            responsive=True,
-            className="table-sm"
+        # Create sortable table using dash_table.DataTable
+        display_df = table_df.head(2000)
+        
+        table = dash_table.DataTable(
+            data=display_df.to_dict('records'),
+            columns=[
+                {"name": "Gene Symbol", "id": "gene_symbol", "type": "text"},
+                {"name": "log2FC (1)", "id": "log2FoldChange_1", "type": "numeric", "format": {"specifier": ".4f"}},
+                {"name": "log2FC (2)", "id": "log2FoldChange_2", "type": "numeric", "format": {"specifier": ".4f"}},
+            ] + ([
+                {"name": "padj (1)", "id": "padj_1", "type": "numeric", "format": {"specifier": ".2e"}},
+                {"name": "padj (2)", "id": "padj_2", "type": "numeric", "format": {"specifier": ".2e"}}
+            ] if 'padj_1' in table_df.columns else []) + ([
+                {"name": "pvalue (1)", "id": "pvalue_1", "type": "numeric", "format": {"specifier": ".2e"}},
+                {"name": "pvalue (2)", "id": "pvalue_2", "type": "numeric", "format": {"specifier": ".2e"}}
+            ] if 'pvalue_1' in table_df.columns else []),
+            sort_action="native",
+            sort_mode="multi",
+            filter_action="native",
+            page_action="native",
+            page_current=0,
+            page_size=25,
+            style_table={'overflowX': 'auto'},
+            style_cell={
+                'textAlign': 'left',
+                'padding': '10px',
+                'fontFamily': 'sans-serif',
+                'fontSize': '12px'
+            },
+            style_header={
+                'backgroundColor': 'rgb(230, 230, 230)',
+                'fontWeight': 'bold'
+            },
+            export_format="csv",
+            export_headers="display"
         )
         
         table_info = html.P(
-            f"Showing {min(1000, len(table_df))} of {len(table_df)} genes. "
-            "Use gene search to filter results.",
+            f"Showing {min(2000, len(table_df))} of {len(table_df)} genes. "
+            "Click column headers to sort. Use gene search to filter results.",
             className="text-muted small"
         )
         
@@ -1020,25 +1083,35 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
                 dbc.Alert("Please select two different comparisons", color="warning")
             ]), html.Div(), None
     
+    # Ensure thresholds are numbers
+    if fdr_threshold is None:
+        fdr_threshold = 0.05
+    if lfc_threshold is None:
+        lfc_threshold = 1.0
+    
     try:
-        # Ensure thresholds are numbers
-        if fdr_threshold is None:
-            fdr_threshold = 0.05
-        if lfc_threshold is None:
-            lfc_threshold = 1.0
         # Extract DEGs from each comparison
-        try:
-            degs1 = extract_degs(file_path1, fdr_threshold, lfc_threshold)
-            degs2 = extract_degs(file_path2, fdr_threshold, lfc_threshold)
-            names = [get_file_display_name(file_path1), get_file_display_name(file_path2)]
-            
-            if n_comparisons == 3:
-                degs3 = extract_degs(file_path3, fdr_threshold, lfc_threshold)
-                names.append(get_file_display_name(file_path3))
-        except Exception as e:
-            return html.Div([
-                dbc.Alert(f"Error extracting DEGs: {str(e)}", color="danger")
-            ]), html.Div(), None
+        degs1 = extract_degs(file_path1, fdr_threshold, lfc_threshold)
+        degs2 = extract_degs(file_path2, fdr_threshold, lfc_threshold)
+        names = [get_file_display_name(file_path1), get_file_display_name(file_path2)]
+        
+        # Debug info
+        deg_counts_info = html.P(
+            f"DEG counts - {names[0]}: {len(degs1)}, {names[1]}: {len(degs2)}",
+            className="text-muted small mb-2"
+        )
+        
+        if n_comparisons == 3:
+            if not file_path3:
+                return html.Div([
+                    dbc.Alert("Please select all three comparisons", color="warning")
+                ]), html.Div(), None
+            degs3 = extract_degs(file_path3, fdr_threshold, lfc_threshold)
+            names.append(get_file_display_name(file_path3))
+            deg_counts_info = html.P(
+                f"DEG counts - {names[0]}: {len(degs1)}, {names[1]}: {len(degs2)}, {names[2]}: {len(degs3)}",
+                className="text-muted small mb-2"
+            )
         
         # Calculate overlaps first
         if n_comparisons == 2:
@@ -1075,16 +1148,12 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
         fig, ax = plt.subplots(figsize=(10, 8))
         
         if n_comparisons == 2:
-            # Ensure we have sets (venn2 requires lists, not empty sets)
-            degs1_list = list(degs1) if degs1 else []
-            degs2_list = list(degs2) if degs2 else []
+            # Convert sets to lists for venn2
+            degs1_list = list(degs1)
+            degs2_list = list(degs2)
             
-            try:
-                v = venn2([degs1_list, degs2_list], set_labels=names, ax=ax)
-            except Exception as e:
-                # If venn2 fails with lists, try with subset sizes
-                # venn2 subsets format: (size_set1, size_set2, intersection_size)
-                v = venn2(subsets=(len(degs1), len(degs2), len(overlap)), set_labels=names, ax=ax)
+            # Create venn2 diagram
+            v = venn2([degs1_list, degs2_list], set_labels=names, ax=ax)
             
             # Customize colors and labels for venn2
             if v:
@@ -1115,19 +1184,13 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
                         label.set_fontweight('bold')
             
         else:  # n_comparisons == 3
-            # Ensure we have sets (venn3 requires lists, not empty sets)
-            degs1_list = list(degs1) if degs1 else []
-            degs2_list = list(degs2) if degs2 else []
-            degs3_list = list(degs3) if degs3 else []
+            # Convert sets to lists for venn3
+            degs1_list = list(degs1)
+            degs2_list = list(degs2)
+            degs3_list = list(degs3)
             
-            try:
-                v = venn3([degs1_list, degs2_list, degs3_list], set_labels=names, ax=ax)
-            except Exception as e:
-                # If venn3 fails, try with subsets parameter
-                v = venn3(subsets=(
-                    len(only1), len(only2), len(overlap12),
-                    len(only3), len(overlap13), len(overlap23), len(overlap_all)
-                ), set_labels=names, ax=ax)
+            # Create venn3 diagram
+            v = venn3([degs1_list, degs2_list, degs3_list], set_labels=names, ax=ax)
             
             # Customize colors for venn3
             if v:
@@ -1170,20 +1233,21 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
                      fontsize=14, fontweight='bold', pad=20)
         
         # Convert matplotlib figure to base64 string for display
+        buf = io.BytesIO()
         try:
-            buf = io.BytesIO()
             plt.savefig(buf, format='png', bbox_inches='tight', dpi=100)
             buf.seek(0)
             img_str = base64.b64encode(buf.read()).decode()
-            plt.close(fig)
-            
             img_src = f'data:image/png;base64,{img_str}'
             venn_img = html.Img(src=img_src, style={'width': '100%', 'height': 'auto'})
-        except Exception as e:
+        except Exception as img_error:
             venn_img = html.Div([
-                dbc.Alert(f"Error generating image: {str(e)}", color="danger")
+                dbc.Alert(f"Error generating image: {str(img_error)}", color="danger"),
+                html.Pre(str(img_error), style={'fontSize': '10px'})
             ])
+        finally:
             plt.close(fig)
+            buf.close()
         
         # Create gene lists display
         if n_comparisons == 2:
@@ -1249,7 +1313,13 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
                 ], width=3)
             ])
         
-        return venn_img, gene_lists_html, overlaps_data
+        # Combine diagram and info
+        venn_container = html.Div([
+            deg_counts_info,
+            venn_img
+        ])
+        
+        return venn_container, gene_lists_html, overlaps_data
         
     except Exception as e:
         import traceback
