@@ -506,20 +506,26 @@ def create_gsea_tab():
     """Create the GSEA enrichment tab layout."""
     
     # Get GSEA files and extract unique comparisons
-    gsea_files = discover_gsea_files()
-    comparisons_set = set()
-    
-    for file_path, comparison, db_type, display_name in gsea_files:
-        comparisons_set.add(comparison)
-    
-    # Create comparison options
-    comparison_options = [
-        {"label": comp.replace("_", " "), "value": comp}
-        for comp in sorted(comparisons_set)
-    ]
-    
-    # Default comparison
-    default_comp = comparison_options[0]["value"] if comparison_options else None
+    try:
+        gsea_files = discover_gsea_files()
+        comparisons_set = set()
+        
+        for file_path, comparison, db_type, display_name in gsea_files:
+            comparisons_set.add(comparison)
+        
+        # Create comparison options
+        comparison_options = [
+            {"label": comp.replace("_", " "), "value": comp}
+            for comp in sorted(comparisons_set)
+        ]
+        
+        # Default comparison
+        default_comp = comparison_options[0]["value"] if comparison_options else None
+    except Exception as e:
+        # Fallback if file discovery fails
+        comparison_options = []
+        default_comp = None
+        print(f"Warning: Could not discover GSEA files: {e}")
     
     return dbc.Row([
         dbc.Col([
