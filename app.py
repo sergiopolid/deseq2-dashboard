@@ -1324,9 +1324,9 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
         
         # Create Venn diagram (only 2 comparisons supported)
         fig, ax = plt.subplots(figsize=(10, 8))
-            # Convert sets to lists for venn2
-            degs1_list = list(degs1)
-            degs2_list = list(degs2)
+        # Convert sets to lists for venn2
+        degs1_list = list(degs1)
+        degs2_list = list(degs2)
             
             # Create venn2 diagram - handle empty sets
             if len(degs1_list) == 0 and len(degs2_list) == 0:
@@ -1378,8 +1378,6 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
                     ax.text(0.5, 0.5, f'Error creating Venn diagram:\n{str(venn_err)}', 
                            ha='center', va='center', fontsize=12, transform=ax.transAxes,
                            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
-            
-        else:  # n_comparisons == 3
             # Convert sets to lists for venn3
             degs1_list = list(degs1)
             degs2_list = list(degs2)
