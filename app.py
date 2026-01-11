@@ -1226,10 +1226,10 @@ def update_venn_comp3_container(n_comparisons):
      Input("venn-comp2-dropdown", "value"),
      Input("venn-fdr-slider", "value"),
      Input("venn-lfc-slider", "value")],
-    [State("venn-comp3-dropdown", "value"),
-     State("venn-data-store", "data")]
+    [State("venn-data-store", "data")],
+    prevent_initial_call=False
 )
-def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lfc_threshold, file_path3, stored_data):
+def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lfc_threshold, stored_data):
     """Update Venn diagram based on selected comparisons."""
     
     # Check if matplotlib-venn is available
@@ -1246,7 +1246,15 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
             dbc.Alert("Please select at least two comparisons", color="warning")
         ]), html.Div(), None
     
-    if n_comparisons == 3 and not file_path3:
+    # For 3 comparisons, we can't get file_path3 since the component is conditionally rendered
+    # We'll only support 2 comparisons for now, or restructure to always render the component
+    file_path3 = None
+    if n_comparisons == 3:
+        # This won't work properly until we fix the component rendering
+        # For now, show an error message
+        return html.Div([
+            dbc.Alert("3-way Venn diagrams are currently not supported due to callback limitations. Please use 2 comparisons.", color="warning")
+        ]), html.Div(), None
         return html.Div([
             dbc.Alert("Please select all three comparisons", color="warning")
         ]), html.Div(), None
@@ -1567,10 +1575,9 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
     State("venn-n-comparisons", "value"),
     State("venn-comp1-dropdown", "value"),
     State("venn-comp2-dropdown", "value"),
-    State("venn-comp3-dropdown", "value"),
     prevent_initial_call=True
 )
-def export_venn_overlaps(n_clicks, overlaps_data, n_comparisons, file_path1, file_path2, file_path3):
+def export_venn_overlaps(n_clicks, overlaps_data, n_comparisons, file_path1, file_path2):
     """Export overlap gene lists to CSV."""
     if not overlaps_data:
         return None
