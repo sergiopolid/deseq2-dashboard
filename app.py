@@ -1658,6 +1658,9 @@ def export_venn_overlaps(n_clicks, overlaps_data, n_comparisons, file_path1, fil
 def update_gsea_plot(comparison, db_type, viz_type, fdr_threshold, n_pathways, nes_threshold):
     """Update GSEA enrichment plot and table."""
     
+    # Debug: print callback inputs
+    print(f"DEBUG: update_gsea_plot called with comparison={comparison}, db_type={db_type}, viz_type={viz_type}")
+    
     # Validate inputs
     if not comparison or not db_type:
         return html.Div([
