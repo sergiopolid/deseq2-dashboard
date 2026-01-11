@@ -26,6 +26,7 @@ echo ""
 echo "Creating data directory structure..."
 mkdir -p data/deseq2_results/primary
 mkdir -p data/deseq2_results/secondary
+mkdir -p data/gsea_results
 
 # Find and copy DESeq2 files
 SOURCE_DIR="../analysis_results/deseq2_results"
@@ -48,6 +49,15 @@ fi
 # Copy secondary files
 if [ -d "$SOURCE_DIR/secondary" ]; then
     cp -v "$SOURCE_DIR"/secondary/*.tsv data/deseq2_results/secondary/ 2>/dev/null || echo "  No secondary files found"
+fi
+
+# Copy GSEA files
+echo ""
+echo "Copying GSEA results files..."
+if [ -d "$SOURCE_DIR/gsea_results" ]; then
+    cp -v "$SOURCE_DIR"/gsea_results/*.tsv data/gsea_results/ 2>/dev/null || echo "  No GSEA files found"
+else
+    echo "  ⚠️  GSEA results directory not found: $SOURCE_DIR/gsea_results"
 fi
 
 # Create .renderignore file
@@ -91,14 +101,16 @@ echo "✓ Created .renderignore"
 # Count files copied
 PRIMARY_COUNT=$(find data/deseq2_results/primary -name "*.tsv" 2>/dev/null | wc -l)
 SECONDARY_COUNT=$(find data/deseq2_results/secondary -name "*.tsv" 2>/dev/null | wc -l)
+GSEA_COUNT=$(find data/gsea_results -name "*.tsv" 2>/dev/null | wc -l)
 
 echo ""
 echo "============================================================"
 echo "✓ Preparation Complete!"
 echo "============================================================"
 echo "Files copied:"
-echo "  Primary: $PRIMARY_COUNT files"
-echo "  Secondary: $SECONDARY_COUNT files"
+echo "  Primary DESeq2: $PRIMARY_COUNT files"
+echo "  Secondary DESeq2: $SECONDARY_COUNT files"
+echo "  GSEA: $GSEA_COUNT files"
 echo ""
 echo "Next steps:"
 echo "  1. Review the copied files in data/deseq2_results/"
