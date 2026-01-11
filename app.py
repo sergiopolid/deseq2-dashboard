@@ -1246,32 +1246,17 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
             dbc.Alert("Please select at least two comparisons", color="warning")
         ]), html.Div(), None
     
-    # For 3 comparisons, we can't get file_path3 since the component is conditionally rendered
-    # We'll only support 2 comparisons for now, or restructure to always render the component
-    file_path3 = None
+    # Only support 2 comparisons for now (3-way requires conditionally rendered component)
     if n_comparisons == 3:
-        # This won't work properly until we fix the component rendering
-        # For now, show an error message
         return html.Div([
-            dbc.Alert("3-way Venn diagrams are currently not supported due to callback limitations. Please use 2 comparisons.", color="warning")
-        ]), html.Div(), None
-        return html.Div([
-            dbc.Alert("Please select all three comparisons", color="warning")
+            dbc.Alert("3-way Venn diagrams are currently not supported. Please use 2 comparisons.", color="warning")
         ]), html.Div(), None
     
     # Check for duplicate selections
-    paths = [file_path1, file_path2]
-    if n_comparisons == 3:
-        paths.append(file_path3)
-        if len(set(paths)) != 3:
-            return html.Div([
-                dbc.Alert("Please select three different comparisons", color="warning")
-            ]), html.Div(), None
-    else:
-        if file_path1 == file_path2:
-            return html.Div([
-                dbc.Alert("Please select two different comparisons", color="warning")
-            ]), html.Div(), None
+    if file_path1 == file_path2:
+        return html.Div([
+            dbc.Alert("Please select two different comparisons", color="warning")
+        ]), html.Div(), None
     
     # Ensure thresholds are numbers
     if fdr_threshold is None:
@@ -1337,10 +1322,8 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
                 'overlap_all': list(overlap_all)
             }
         
-        # Create Venn diagram
+        # Create Venn diagram (only 2 comparisons supported)
         fig, ax = plt.subplots(figsize=(10, 8))
-        
-        if n_comparisons == 2:
             # Convert sets to lists for venn2
             degs1_list = list(degs1)
             degs2_list = list(degs2)
