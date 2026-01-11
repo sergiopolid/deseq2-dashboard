@@ -86,6 +86,7 @@ app.layout = dbc.Container([
     dcc.Store(id="volcano-data-store"),
     dcc.Store(id="scatter-data-store"),
     dcc.Store(id="venn-data-store"),
+    dcc.Store(id="gsea-data-store"),
     
 ], fluid=True)
 
