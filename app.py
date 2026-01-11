@@ -20,13 +20,17 @@ from matplotlib_venn import venn2, venn3
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
+# Ensure we're using non-interactive mode
+plt.ioff()  # Turn off interactive mode
 
 from utils import (
     discover_deseq2_files,
     load_deseq2_file,
     merge_comparisons,
     get_file_display_name,
-    extract_degs
+    extract_degs,
+    discover_gsea_files,
+    load_gsea_file
 )
 
 # Initialize Dash app with Bootstrap theme
@@ -70,6 +74,7 @@ app.layout = dbc.Container([
                 dbc.Tab(label="Volcano Plot", tab_id="volcano-tab"),
                 dbc.Tab(label="Scatter Comparison", tab_id="scatter-tab"),
                 dbc.Tab(label="Venn Diagram", tab_id="venn-tab"),
+                dbc.Tab(label="GSEA Enrichment", tab_id="gsea-tab"),
             ], id="main-tabs", active_tab="volcano-tab")
         ])
     ], className="mb-4"),
@@ -494,6 +499,136 @@ def create_venn_tab():
 
 
 # ============================================================================
+# GSEA Enrichment Tab
+# ============================================================================
+
+def create_gsea_tab():
+    """Create the GSEA enrichment tab layout."""
+    
+    # Get GSEA files and extract unique comparisons
+    gsea_files = discover_gsea_files()
+    comparisons_set = set()
+    
+    for file_path, comparison, db_type, display_name in gsea_files:
+        comparisons_set.add(comparison)
+    
+    # Create comparison options
+    comparison_options = [
+        {"label": comp.replace("_", " "), "value": comp}
+        for comp in sorted(comparisons_set)
+    ]
+    
+    # Default comparison
+    default_comp = comparison_options[0]["value"] if comparison_options else None
+    
+    return dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader("Controls"),
+                dbc.CardBody([
+                    html.Label("Select Comparison:", className="fw-bold"),
+                    dcc.Dropdown(
+                        id="gsea-comparison-dropdown",
+                        options=comparison_options,
+                        value=default_comp,
+                        placeholder="Select comparison...",
+                        searchable=True,
+                        clearable=False,
+                        style={"fontSize": "12px"}
+                    ),
+                    html.Br(),
+                    
+                    html.Label("Database Type:", className="fw-bold"),
+                    dcc.Dropdown(
+                        id="gsea-db-dropdown",
+                        options=[
+                            {"label": "GO Biological Process (BP)", "value": "GO_BP"},
+                            {"label": "GO Cellular Component (CC)", "value": "GO_CC"},
+                            {"label": "GO Molecular Function (MF)", "value": "GO_MF"},
+                            {"label": "KEGG Pathways", "value": "KEGG"}
+                        ],
+                        value="GO_BP",
+                        clearable=False,
+                        style={"fontSize": "12px"}
+                    ),
+                    html.Br(),
+                    
+                    html.Label("Visualization Type:", className="fw-bold"),
+                    dcc.RadioItems(
+                        id="gsea-viz-type",
+                        options=[
+                            {"label": "Bar Plot (Top Pathways)", "value": "bar"},
+                            {"label": "Volcano Plot (NES vs -log10(padj))", "value": "volcano"}
+                        ],
+                        value="bar",
+                        inline=False,
+                        className="mb-3"
+                    ),
+                    html.Br(),
+                    html.Hr(),
+                    
+                    html.H6("Filters", className="fw-bold mt-3"),
+                    
+                    html.Label("FDR Threshold:", className="fw-bold small"),
+                    dcc.Slider(
+                        id="gsea-fdr-slider",
+                        min=0.001,
+                        max=0.35,
+                        step=0.001,
+                        value=0.05,
+                        marks={0.001: "0.001", 0.01: "0.01", 0.05: "0.05", 0.1: "0.1", 0.2: "0.2", 0.35: "0.35"},
+                        tooltip={"placement": "bottom", "always_visible": True}
+                    ),
+                    html.Br(),
+                    
+                    html.Label("Number of Top Pathways (Bar Plot):", className="fw-bold small mt-2"),
+                    dbc.Input(
+                        id="gsea-n-pathways",
+                        type="number",
+                        min=10,
+                        max=100,
+                        value=30,
+                        step=5
+                    ),
+                    html.Br(),
+                    
+                    html.Label("NES Threshold (Volcano Plot):", className="fw-bold small mt-2"),
+                    dcc.Slider(
+                        id="gsea-nes-threshold",
+                        min=0,
+                        max=3,
+                        step=0.1,
+                        value=1.5,
+                        marks={0: "0", 1: "1", 1.5: "1.5", 2: "2", 3: "3"},
+                        tooltip={"placement": "bottom", "always_visible": True}
+                    )
+                ])
+            ], className="mb-4")
+        ], width=3),
+        
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader("GSEA Enrichment Results"),
+                dbc.CardBody([
+                    dcc.Loading(
+                        id="gsea-loading",
+                        type="default",
+                        children=html.Div(id="gsea-plot-container")
+                    )
+                ])
+            ], className="mb-4"),
+            
+            dbc.Card([
+                dbc.CardHeader("Results Table"),
+                dbc.CardBody([
+                    html.Div(id="gsea-table-container")
+                ])
+            ])
+        ], width=9)
+    ])
+
+
+# ============================================================================
 # Callbacks
 # ============================================================================
 
@@ -509,6 +644,8 @@ def update_tab_content(active_tab):
         return create_scatter_tab()
     elif active_tab == "venn-tab":
         return create_venn_tab()
+    elif active_tab == "gsea-tab":
+        return create_gsea_tab()
     return html.Div("Select a tab")
 
 
@@ -1088,6 +1225,14 @@ def update_venn_comp3_container(n_comparisons):
 def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lfc_threshold, file_path3, stored_data):
     """Update Venn diagram based on selected comparisons."""
     
+    # Check if matplotlib-venn is available
+    try:
+        from matplotlib_venn import venn2, venn3
+    except ImportError:
+        return html.Div([
+            dbc.Alert("Error: matplotlib-venn is not installed. Please install it: pip install matplotlib-venn", color="danger")
+        ]), html.Div(), None
+    
     # Validate inputs
     if not file_path1 or not file_path2:
         return html.Div([
@@ -1125,12 +1270,7 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
         degs2 = extract_degs(file_path2, fdr_threshold, lfc_threshold)
         names = [get_file_display_name(file_path1), get_file_display_name(file_path2)]
         
-        # Debug info
-        deg_counts_info = html.P(
-            f"DEG counts - {names[0]}: {len(degs1)}, {names[1]}: {len(degs2)}",
-            className="text-muted small mb-2"
-        )
-        
+        degs3 = None
         if n_comparisons == 3:
             if not file_path3:
                 return html.Div([
@@ -1138,6 +1278,14 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
                 ]), html.Div(), None
             degs3 = extract_degs(file_path3, fdr_threshold, lfc_threshold)
             names.append(get_file_display_name(file_path3))
+        
+        # Debug info - show DEG counts
+        if n_comparisons == 2:
+            deg_counts_info = html.P(
+                f"DEG counts - {names[0]}: {len(degs1)}, {names[1]}: {len(degs2)}",
+                className="text-muted small mb-2"
+            )
+        else:
             deg_counts_info = html.P(
                 f"DEG counts - {names[0]}: {len(degs1)}, {names[1]}: {len(degs2)}, {names[2]}: {len(degs3)}",
                 className="text-muted small mb-2"
@@ -1182,36 +1330,56 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
             degs1_list = list(degs1)
             degs2_list = list(degs2)
             
-            # Create venn2 diagram
-            v = venn2([degs1_list, degs2_list], set_labels=names, ax=ax)
-            
-            # Customize colors and labels for venn2
-            if v:
-                # Get patches and customize
-                patches = [v.get_patch_by_id('10'), v.get_patch_by_id('01'), v.get_patch_by_id('11')]
-                colors = ['#3498db', '#e74c3c', '#2ecc71']
-                
-                for i, patch in enumerate(patches):
-                    if patch:
-                        patch.set_facecolor(colors[i % 3])
-                        patch.set_alpha(0.6)
-                        patch.set_edgecolor('black')
-                        patch.set_linewidth(2)
-                
-                # Update labels with counts
-                label_ids = ['10', '01', '11']
-                label_texts = [
-                    f'{len(only1)}',
-                    f'{len(only2)}',
-                    f'{len(overlap)}'
-                ]
-                
-                for label_id, label_text in zip(label_ids, label_texts):
-                    label = v.get_label_by_id(label_id)
-                    if label:
-                        label.set_text(label_text)
-                        label.set_fontsize(12)
-                        label.set_fontweight('bold')
+            # Create venn2 diagram - handle empty sets
+            if len(degs1_list) == 0 and len(degs2_list) == 0:
+                ax.text(0.5, 0.5, 'No DEGs found in either comparison', 
+                       ha='center', va='center', fontsize=14, transform=ax.transAxes)
+                ax.set_xlim(0, 1)
+                ax.set_ylim(0, 1)
+            else:
+                try:
+                    v = venn2([degs1_list, degs2_list], set_labels=names, ax=ax)
+                    
+                    # Customize colors and labels for venn2
+                    if v is not None:
+                        # Get patches and customize - wrap in try-except for safety
+                        patch_configs = [
+                            ('10', '#3498db'),
+                            ('01', '#e74c3c'),
+                            ('11', '#2ecc71')
+                        ]
+                        
+                        for patch_id, color in patch_configs:
+                            try:
+                                patch = v.get_patch_by_id(patch_id)
+                                if patch is not None:
+                                    patch.set_facecolor(color)
+                                    patch.set_alpha(0.6)
+                                    patch.set_edgecolor('black')
+                                    patch.set_linewidth(2)
+                            except (AttributeError, KeyError, ValueError):
+                                pass  # Patch doesn't exist for this region
+                        
+                        # Update labels with counts
+                        label_configs = [
+                            ('10', len(only1)),
+                            ('01', len(only2)),
+                            ('11', len(overlap))
+                        ]
+                        
+                        for label_id, count in label_configs:
+                            try:
+                                label = v.get_label_by_id(label_id)
+                                if label is not None:
+                                    label.set_text(str(count))
+                                    label.set_fontsize(12)
+                                    label.set_fontweight('bold')
+                            except (AttributeError, KeyError, ValueError):
+                                pass  # Label doesn't exist for this region
+                except Exception as venn_err:
+                    ax.text(0.5, 0.5, f'Error creating Venn diagram:\n{str(venn_err)}', 
+                           ha='center', va='center', fontsize=12, transform=ax.transAxes,
+                           bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
             
         else:  # n_comparisons == 3
             # Convert sets to lists for venn3
@@ -1219,45 +1387,64 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
             degs2_list = list(degs2)
             degs3_list = list(degs3)
             
-            # Create venn3 diagram
-            v = venn3([degs1_list, degs2_list, degs3_list], set_labels=names, ax=ax)
-            
-            # Customize colors for venn3
-            if v:
-                colors = ['#3498db', '#e74c3c', '#2ecc71']
-                
-                # venn3 has different patch IDs
-                for i, patch_id in enumerate(['100', '010', '001', '110', '101', '011', '111']):
-                    patch = v.get_patch_by_id(patch_id)
-                    if patch:
-                        # Determine color based on which sets are involved
-                        if patch_id == '111':  # All three
-                            patch.set_facecolor('#f39c12')  # Orange for all overlap
-                        elif patch_id in ['110', '101', '011']:  # Two-way overlaps
-                            patch.set_facecolor('#95a5a6')  # Gray for two-way
-                        else:  # Single sets
-                            patch.set_facecolor(colors[i % 3])
-                        patch.set_alpha(0.6)
-                        patch.set_edgecolor('black')
-                        patch.set_linewidth(2)
-                
-                # Update labels with counts
-                label_map = {
-                    '100': len(only1),
-                    '010': len(only2),
-                    '001': len(only3),
-                    '110': len(overlap12),
-                    '101': len(overlap13),
-                    '011': len(overlap23),
-                    '111': len(overlap_all)
-                }
-                
-                for label_id, count in label_map.items():
-                    label = v.get_label_by_id(label_id)
-                    if label:
-                        label.set_text(str(count))
-                        label.set_fontsize(11)
-                        label.set_fontweight('bold')
+            # Handle empty sets for venn3
+            if len(degs1_list) == 0 and len(degs2_list) == 0 and len(degs3_list) == 0:
+                ax.text(0.5, 0.5, 'No DEGs found in any comparison', 
+                       ha='center', va='center', fontsize=14, transform=ax.transAxes)
+                ax.set_xlim(0, 1)
+                ax.set_ylim(0, 1)
+            else:
+                # Create venn3 diagram
+                try:
+                    v = venn3([degs1_list, degs2_list, degs3_list], set_labels=names, ax=ax)
+                    
+                    # Customize colors for venn3
+                    if v is not None:
+                        colors = ['#3498db', '#e74c3c', '#2ecc71']
+                        
+                        # venn3 has different patch IDs - wrap in try-except for safety
+                        patch_ids = ['100', '010', '001', '110', '101', '011', '111']
+                        for i, patch_id in enumerate(patch_ids):
+                            try:
+                                patch = v.get_patch_by_id(patch_id)
+                                if patch is not None:
+                                    # Determine color based on which sets are involved
+                                    if patch_id == '111':  # All three
+                                        patch.set_facecolor('#f39c12')  # Orange for all overlap
+                                    elif patch_id in ['110', '101', '011']:  # Two-way overlaps
+                                        patch.set_facecolor('#95a5a6')  # Gray for two-way
+                                    else:  # Single sets
+                                        patch.set_facecolor(colors[i % 3])
+                                    patch.set_alpha(0.6)
+                                    patch.set_edgecolor('black')
+                                    patch.set_linewidth(2)
+                            except (AttributeError, KeyError, ValueError):
+                                pass  # Patch doesn't exist for this region
+                        
+                        # Update labels with counts
+                        label_map = {
+                            '100': len(only1),
+                            '010': len(only2),
+                            '001': len(only3),
+                            '110': len(overlap12),
+                            '101': len(overlap13),
+                            '011': len(overlap23),
+                            '111': len(overlap_all)
+                        }
+                        
+                        for label_id, count in label_map.items():
+                            try:
+                                label = v.get_label_by_id(label_id)
+                                if label is not None:
+                                    label.set_text(str(count))
+                                    label.set_fontsize(11)
+                                    label.set_fontweight('bold')
+                            except (AttributeError, KeyError, ValueError):
+                                pass  # Label doesn't exist for this region
+                except Exception as venn_err:
+                    ax.text(0.5, 0.5, f'Error creating Venn diagram:\n{str(venn_err)}', 
+                           ha='center', va='center', fontsize=12, transform=ax.transAxes,
+                           bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
         
         ax.set_title(f"Venn Diagram of DEGs\n(FDR < {fdr_threshold}, |log2FC| > {lfc_threshold})", 
                      fontsize=14, fontweight='bold', pad=20)
@@ -1271,13 +1458,18 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
             img_src = f'data:image/png;base64,{img_str}'
             venn_img = html.Img(src=img_src, style={'width': '100%', 'height': 'auto'})
         except Exception as img_error:
+            import traceback
+            img_traceback = traceback.format_exc()
             venn_img = html.Div([
                 dbc.Alert(f"Error generating image: {str(img_error)}", color="danger"),
-                html.Pre(str(img_error), style={'fontSize': '10px'})
+                html.Pre(img_traceback, style={'fontSize': '10px', 'overflow': 'auto', 'maxHeight': '200px'})
             ])
         finally:
-            plt.close(fig)
-            buf.close()
+            plt.close('all')  # Close all figures
+            try:
+                buf.close()
+            except:
+                pass
         
         # Create gene lists display
         if n_comparisons == 2:
@@ -1440,6 +1632,223 @@ def export_venn_overlaps(n_clicks, overlaps_data, n_comparisons, file_path1, fil
         
     except Exception as e:
         return None
+
+
+# ============================================================================
+# GSEA Callbacks
+# ============================================================================
+
+@app.callback(
+    [Output("gsea-plot-container", "children"),
+     Output("gsea-table-container", "children"),
+     Output("gsea-data-store", "data")],
+    [Input("gsea-comparison-dropdown", "value"),
+     Input("gsea-db-dropdown", "value"),
+     Input("gsea-viz-type", "value"),
+     Input("gsea-fdr-slider", "value"),
+     Input("gsea-n-pathways", "value"),
+     Input("gsea-nes-threshold", "value")]
+)
+def update_gsea_plot(comparison, db_type, viz_type, fdr_threshold, n_pathways, nes_threshold):
+    """Update GSEA enrichment plot and table."""
+    
+    # Validate inputs
+    if not comparison or not db_type:
+        return html.Div([
+            dbc.Alert("Please select a comparison and database type", color="warning")
+        ]), html.Div(), None
+    
+    # Ensure thresholds are numbers
+    if fdr_threshold is None:
+        fdr_threshold = 0.05
+    if n_pathways is None:
+        n_pathways = 30
+    if nes_threshold is None:
+        nes_threshold = 1.5
+    
+    try:
+        # Find the file path for this comparison and database type
+        gsea_files = discover_gsea_files()
+        file_path = None
+        
+        for path, comp, db, display_name in gsea_files:
+            if comp == comparison and db == db_type:
+                file_path = path
+                break
+        
+        if not file_path:
+            return html.Div([
+                dbc.Alert(f"GSEA file not found for {comparison} ({db_type})", color="danger")
+            ]), html.Div(), None
+        
+        # Load GSEA data
+        df = load_gsea_file(file_path)
+        
+        # Filter by FDR threshold
+        df_filtered = df[df['padj'] < fdr_threshold].copy()
+        
+        if len(df_filtered) == 0:
+            return html.Div([
+                dbc.Alert(f"No pathways found with padj < {fdr_threshold}", color="warning")
+            ]), html.Div(), None
+        
+        # Create visualization
+        if viz_type == "bar":
+            # Bar plot: Top pathways by NES
+            df_sorted = df_filtered.sort_values('NES', ascending=False)
+            df_top = df_sorted.head(n_pathways)
+            
+            # Reverse for horizontal bar plot (highest NES at top)
+            df_top = df_top.sort_values('NES', ascending=True)
+            
+            # Clean pathway names (remove prefix like GOBP_, GOC_, etc.)
+            pathway_names = df_top['pathway'].str.replace('^(GOBP_|GOCC_|GOMF_|KEGG_)', '', regex=True)
+            pathway_names = pathway_names.str.replace('_', ' ')
+            
+            # Determine colors based on NES direction
+            colors = ['#e74c3c' if nes > 0 else '#3498db' for nes in df_top['NES']]
+            
+            fig = go.Figure(data=[
+                go.Bar(
+                    x=df_top['NES'],
+                    y=pathway_names,
+                    orientation='h',
+                    marker=dict(color=colors),
+                    text=[f"NES: {nes:.2f}<br>padj: {padj:.2e}" 
+                          for nes, padj in zip(df_top['NES'], df_top['padj'])],
+                    textposition='outside',
+                    hovertemplate='<b>%{y}</b><br>NES: %{x:.2f}<br>padj: %{customdata:.2e}<extra></extra>',
+                    customdata=df_top['padj']
+                )
+            ])
+            
+            fig.update_layout(
+                title=f"Top {len(df_top)} Enriched Pathways (padj < {fdr_threshold})",
+                xaxis_title="Normalized Enrichment Score (NES)",
+                yaxis_title="Pathway",
+                height=600 + len(df_top) * 20,  # Dynamic height
+                template="plotly_white",
+                showlegend=False,
+                hovermode='closest'
+            )
+            
+            plot_children = dcc.Graph(figure=fig)
+            
+        else:  # volcano plot
+            # Volcano plot: NES vs -log10(padj)
+            df_filtered = df_filtered.copy()
+            df_filtered['neg_log10_padj'] = -np.log10(df_filtered['padj'].replace(0, 1e-300))
+            
+            # Determine colors based on significance and NES direction
+            colors = []
+            for _, row in df_filtered.iterrows():
+                if abs(row['NES']) > nes_threshold and row['padj'] < fdr_threshold:
+                    colors.append('#e74c3c' if row['NES'] > 0 else '#3498db')
+                else:
+                    colors.append('#95a5a6')
+            
+            fig = go.Figure(data=[
+                go.Scatter(
+                    x=df_filtered['NES'],
+                    y=df_filtered['neg_log10_padj'],
+                    mode='markers',
+                    marker=dict(
+                        color=colors,
+                        size=8,
+                        opacity=0.6,
+                        line=dict(width=0.5, color='white')
+                    ),
+                    text=df_filtered['pathway'].str.replace('^(GOBP_|GOCC_|GOMF_|KEGG_)', '', regex=True).str.replace('_', ' '),
+                    hovertemplate='<b>%{text}</b><br>NES: %{x:.2f}<br>-log10(padj): %{y:.2f}<br>padj: %{customdata:.2e}<extra></extra>',
+                    customdata=df_filtered['padj'],
+                    name='Pathways'
+                )
+            ])
+            
+            # Add threshold lines
+            fig.add_hline(y=-np.log10(fdr_threshold), line_dash="dash", line_color="gray",
+                         annotation_text=f"padj = {fdr_threshold}")
+            fig.add_vline(x=nes_threshold, line_dash="dash", line_color="gray",
+                         annotation_text=f"NES = {nes_threshold}")
+            fig.add_vline(x=-nes_threshold, line_dash="dash", line_color="gray",
+                         annotation_text=f"NES = -{nes_threshold}")
+            
+            fig.update_layout(
+                title=f"GSEA Volcano Plot (padj < {fdr_threshold}, |NES| > {nes_threshold})",
+                xaxis_title="Normalized Enrichment Score (NES)",
+                yaxis_title="-log10(Adjusted P-value)",
+                height=600,
+                template="plotly_white",
+                hovermode='closest'
+            )
+            
+            plot_children = dcc.Graph(figure=fig)
+        
+        # Create sortable table
+        table_df = df_filtered[['pathway', 'NES', 'padj', 'pval', 'ES', 'size']].copy()
+        
+        # Clean pathway names for display
+        table_df['pathway_clean'] = table_df['pathway'].str.replace('^(GOBP_|GOCC_|GOMF_|KEGG_)', '', regex=True)
+        table_df['pathway_clean'] = table_df['pathway_clean'].str.replace('_', ' ')
+        
+        # Round numeric columns
+        numeric_cols = table_df.select_dtypes(include=[np.number]).columns
+        table_df[numeric_cols] = table_df[numeric_cols].round(4)
+        
+        # Reorder columns for display
+        table_df_display = table_df[['pathway_clean', 'NES', 'padj', 'pval', 'ES', 'size']].copy()
+        table_df_display.columns = ['Pathway', 'NES', 'padj', 'p-value', 'ES', 'Size']
+        
+        # Limit to first 500 rows for performance
+        display_df = table_df_display.head(500)
+        
+        table = dash_table.DataTable(
+            data=display_df.to_dict('records'),
+            columns=[
+                {"name": "Pathway", "id": "Pathway", "type": "text"},
+                {"name": "NES", "id": "NES", "type": "numeric", "format": {"specifier": ".4f"}},
+                {"name": "padj", "id": "padj", "type": "numeric", "format": {"specifier": ".2e"}},
+                {"name": "p-value", "id": "p-value", "type": "numeric", "format": {"specifier": ".2e"}},
+                {"name": "ES", "id": "ES", "type": "numeric", "format": {"specifier": ".4f"}},
+                {"name": "Size", "id": "Size", "type": "numeric", "format": {"specifier": ".0f"}}
+            ],
+            sort_action="native",
+            sort_mode="multi",
+            filter_action="native",
+            page_action="native",
+            page_current=0,
+            page_size=25,
+            style_table={'overflowX': 'auto'},
+            style_cell={
+                'textAlign': 'left',
+                'padding': '10px',
+                'fontFamily': 'sans-serif',
+                'fontSize': '12px'
+            },
+            style_header={
+                'backgroundColor': 'rgb(230, 230, 230)',
+                'fontWeight': 'bold'
+            },
+            export_format="csv",
+            export_headers="display"
+        )
+        
+        table_info = html.P(
+            f"Showing {min(500, len(table_df_display))} of {len(table_df_display)} pathways. "
+            "Click column headers to sort. Use filters to search results.",
+            className="text-muted small"
+        )
+        
+        return plot_children, html.Div([table_info, table]), df_filtered.to_dict('records')
+        
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        error_msg = html.Div([
+            dbc.Alert(f"Error loading GSEA data: {str(e)}", color="danger"),
+            html.Pre(error_details, style={'fontSize': '10px', 'overflow': 'auto', 'maxHeight': '200px'})
+        ])
+        return error_msg, html.Div(), None
 
 
 # ============================================================================
