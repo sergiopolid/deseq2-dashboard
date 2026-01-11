@@ -1653,7 +1653,8 @@ def export_venn_overlaps(n_clicks, overlaps_data, n_comparisons, file_path1, fil
      Input("gsea-viz-type", "value"),
      Input("gsea-fdr-slider", "value"),
      Input("gsea-n-pathways", "value"),
-     Input("gsea-nes-threshold", "value")]
+     Input("gsea-nes-threshold", "value")],
+    prevent_initial_call=False
 )
 def update_gsea_plot(comparison, db_type, viz_type, fdr_threshold, n_pathways, nes_threshold):
     """Update GSEA enrichment plot and table."""
