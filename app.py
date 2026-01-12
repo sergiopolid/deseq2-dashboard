@@ -1269,16 +1269,37 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
         degs1 = extract_degs(file_path1, fdr_threshold, lfc_threshold)
         degs2 = extract_degs(file_path2, fdr_threshold, lfc_threshold)
         names = [get_file_display_name(file_path1), get_file_display_name(file_path2)]
+        
         # Debug info - show DEG counts (only 2 comparisons supported)
         deg_counts_info = html.P(
-            deg_counts_info = html.P(
-                f"DEG counts - {names[0]}: {len(degs1)}, {names[1]}: {len(degs2)}",
-                className="text-muted small mb-2"
+            f"DEG counts - {names[0]}: {len(degs1)}, {names[1]}: {len(degs2)}",
+            className="text-muted small mb-2"
+        )
+        
+        # Calculate overlaps (only 2 comparisons supported)
+        only1 = degs1 - degs2
+        only2 = degs2 - degs1
+        overlap = degs1 & degs2
+        
+        overlaps_data = {
+            'only_1': list(only1),
+            'only_2': list(only2),
+            'overlap': list(overlap)
+        }
+        
+        # Create Venn diagram (only 2 comparisons supported)
+        fig, ax = plt.subplots(figsize=(10, 8))
+        # Convert sets to lists for venn2
+        degs1_list = list(degs1)
+        degs2_list = list(degs2)
+        
+        # Create venn2 diagram - handle empty sets
+        if len(degs1_list) == 0 and len(degs2_list) == 0:
             ax.text(0.5, 0.5, 'No DEGs found in either comparison', 
-                       ha='center', va='center', fontsize=14, transform=ax.transAxes)
-                ax.set_xlim(0, 1)
-                ax.set_ylim(0, 1)
-            else:
+                   ha='center', va='center', fontsize=14, transform=ax.transAxes)
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+        else:
                 try:
                     v = venn2([degs1_list, degs2_list], set_labels=names, ax=ax)
                     
