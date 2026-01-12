@@ -1302,44 +1302,44 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
         else:
             try:
                 v = venn2([degs1_list, degs2_list], set_labels=names, ax=ax)
+                
+                # Customize colors and labels for venn2
+                if v is not None:
+                    # Get patches and customize - wrap in try-except for safety
+                    patch_configs = [
+                        ('10', '#3498db'),
+                        ('01', '#e74c3c'),
+                        ('11', '#2ecc71')
+                    ]
                     
-                    # Customize colors and labels for venn2
-                    if v is not None:
-                        # Get patches and customize - wrap in try-except for safety
-                        patch_configs = [
-                            ('10', '#3498db'),
-                            ('01', '#e74c3c'),
-                            ('11', '#2ecc71')
-                        ]
-                        
-                        for patch_id, color in patch_configs:
-                            try:
-                                patch = v.get_patch_by_id(patch_id)
-                                if patch is not None:
-                                    patch.set_facecolor(color)
-                                    patch.set_alpha(0.6)
-                                    patch.set_edgecolor('black')
-                                    patch.set_linewidth(2)
-                            except (AttributeError, KeyError, ValueError):
-                                pass  # Patch doesn't exist for this region
-                        
-                        # Update labels with counts
-                        label_configs = [
-                            ('10', len(only1)),
-                            ('01', len(only2)),
-                            ('11', len(overlap))
-                        ]
-                        
-                        for label_id, count in label_configs:
-                            try:
-                                label = v.get_label_by_id(label_id)
-                                if label is not None:
-                                    label.set_text(str(count))
-                                    label.set_fontsize(12)
-                                    label.set_fontweight('bold')
-                            except (AttributeError, KeyError, ValueError):
-                                pass  # Label doesn't exist for this region
-                except Exception as venn_err:
+                    for patch_id, color in patch_configs:
+                        try:
+                            patch = v.get_patch_by_id(patch_id)
+                            if patch is not None:
+                                patch.set_facecolor(color)
+                                patch.set_alpha(0.6)
+                                patch.set_edgecolor('black')
+                                patch.set_linewidth(2)
+                        except (AttributeError, KeyError, ValueError):
+                            pass  # Patch doesn't exist for this region
+                    
+                    # Update labels with counts
+                    label_configs = [
+                        ('10', len(only1)),
+                        ('01', len(only2)),
+                        ('11', len(overlap))
+                    ]
+                    
+                    for label_id, count in label_configs:
+                        try:
+                            label = v.get_label_by_id(label_id)
+                            if label is not None:
+                                label.set_text(str(count))
+                                label.set_fontsize(12)
+                                label.set_fontweight('bold')
+                        except (AttributeError, KeyError, ValueError):
+                            pass  # Label doesn't exist for this region
+            except Exception as venn_err:
                     ax.text(0.5, 0.5, f'Error creating Venn diagram:\n{str(venn_err)}', 
                            ha='center', va='center', fontsize=12, transform=ax.transAxes,
                            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
