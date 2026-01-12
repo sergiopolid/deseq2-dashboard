@@ -1289,7 +1289,7 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
         
         # Create Venn diagram (only 2 comparisons supported)
         fig, ax = plt.subplots(figsize=(10, 8))
-        # Convert sets to lists for venn2
+        # Convert sets to lists for venn2 (venn2 accepts lists)
         degs1_list = list(degs1)
         degs2_list = list(degs2)
         
@@ -1300,8 +1300,8 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
             ax.set_xlim(0, 1)
             ax.set_ylim(0, 1)
         else:
-                try:
-                    v = venn2([degs1_list, degs2_list], set_labels=names, ax=ax)
+            try:
+                v = venn2([degs1_list, degs2_list], set_labels=names, ax=ax)
                     
                     # Customize colors and labels for venn2
                     if v is not None:
