@@ -1378,69 +1378,6 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
                     ax.text(0.5, 0.5, f'Error creating Venn diagram:\n{str(venn_err)}', 
                            ha='center', va='center', fontsize=12, transform=ax.transAxes,
                            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
-            # Convert sets to lists for venn3
-            degs1_list = list(degs1)
-            degs2_list = list(degs2)
-            degs3_list = list(degs3)
-            
-            # Handle empty sets for venn3
-            if len(degs1_list) == 0 and len(degs2_list) == 0 and len(degs3_list) == 0:
-                ax.text(0.5, 0.5, 'No DEGs found in any comparison', 
-                       ha='center', va='center', fontsize=14, transform=ax.transAxes)
-                ax.set_xlim(0, 1)
-                ax.set_ylim(0, 1)
-            else:
-                # Create venn3 diagram
-                try:
-                    v = venn3([degs1_list, degs2_list, degs3_list], set_labels=names, ax=ax)
-                    
-                    # Customize colors for venn3
-                    if v is not None:
-                        colors = ['#3498db', '#e74c3c', '#2ecc71']
-                        
-                        # venn3 has different patch IDs - wrap in try-except for safety
-                        patch_ids = ['100', '010', '001', '110', '101', '011', '111']
-                        for i, patch_id in enumerate(patch_ids):
-                            try:
-                                patch = v.get_patch_by_id(patch_id)
-                                if patch is not None:
-                                    # Determine color based on which sets are involved
-                                    if patch_id == '111':  # All three
-                                        patch.set_facecolor('#f39c12')  # Orange for all overlap
-                                    elif patch_id in ['110', '101', '011']:  # Two-way overlaps
-                                        patch.set_facecolor('#95a5a6')  # Gray for two-way
-                                    else:  # Single sets
-                                        patch.set_facecolor(colors[i % 3])
-                                    patch.set_alpha(0.6)
-                                    patch.set_edgecolor('black')
-                                    patch.set_linewidth(2)
-                            except (AttributeError, KeyError, ValueError):
-                                pass  # Patch doesn't exist for this region
-                        
-                        # Update labels with counts
-                        label_map = {
-                            '100': len(only1),
-                            '010': len(only2),
-                            '001': len(only3),
-                            '110': len(overlap12),
-                            '101': len(overlap13),
-                            '011': len(overlap23),
-                            '111': len(overlap_all)
-                        }
-                        
-                        for label_id, count in label_map.items():
-                            try:
-                                label = v.get_label_by_id(label_id)
-                                if label is not None:
-                                    label.set_text(str(count))
-                                    label.set_fontsize(11)
-                                    label.set_fontweight('bold')
-                            except (AttributeError, KeyError, ValueError):
-                                pass  # Label doesn't exist for this region
-                except Exception as venn_err:
-                    ax.text(0.5, 0.5, f'Error creating Venn diagram:\n{str(venn_err)}', 
-                           ha='center', va='center', fontsize=12, transform=ax.transAxes,
-                           bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
         
         ax.set_title(f"Venn Diagram of DEGs\n(FDR < {fdr_threshold}, |log2FC| > {lfc_threshold})", 
                      fontsize=14, fontweight='bold', pad=20)
