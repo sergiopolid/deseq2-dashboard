@@ -1289,19 +1289,21 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
         
         # Create Venn diagram (only 2 comparisons supported)
         fig, ax = plt.subplots(figsize=(10, 8))
-        # Convert sets to lists for venn2 (venn2 accepts lists)
-        degs1_list = list(degs1)
-        degs2_list = list(degs2)
+        # Ensure degs1 and degs2 are sets (extract_degs returns sets, but be safe)
+        degs1_set = set(degs1) if not isinstance(degs1, set) else degs1
+        degs2_set = set(degs2) if not isinstance(degs2, set) else degs2
         
         # Create venn2 diagram - handle empty sets
-        if len(degs1_list) == 0 and len(degs2_list) == 0:
+        if len(degs1_set) == 0 and len(degs2_set) == 0:
             ax.text(0.5, 0.5, 'No DEGs found in either comparison', 
                    ha='center', va='center', fontsize=14, transform=ax.transAxes)
             ax.set_xlim(0, 1)
             ax.set_ylim(0, 1)
         else:
             try:
-                v = venn2([degs1_list, degs2_list], set_labels=names, ax=ax)
+                # venn2 accepts sets directly - pass as tuple or list of sets
+                # This avoids the "list - list" error that occurs when venn2 tries to do set operations
+                v = venn2((degs1_set, degs2_set), set_labels=names, ax=ax)
                 
                 # Customize colors and labels for venn2
                 if v is not None:
