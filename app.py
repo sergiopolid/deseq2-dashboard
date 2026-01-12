@@ -1269,68 +1269,12 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
         degs1 = extract_degs(file_path1, fdr_threshold, lfc_threshold)
         degs2 = extract_degs(file_path2, fdr_threshold, lfc_threshold)
         names = [get_file_display_name(file_path1), get_file_display_name(file_path2)]
-        
-        degs3 = None
-        if n_comparisons == 3:
-            if not file_path3:
-                return html.Div([
-                    dbc.Alert("Please select all three comparisons", color="warning")
-                ]), html.Div(), None
-            degs3 = extract_degs(file_path3, fdr_threshold, lfc_threshold)
-            names.append(get_file_display_name(file_path3))
-        
-        # Debug info - show DEG counts
-        if n_comparisons == 2:
+        # Debug info - show DEG counts (only 2 comparisons supported)
+        deg_counts_info = html.P(
             deg_counts_info = html.P(
                 f"DEG counts - {names[0]}: {len(degs1)}, {names[1]}: {len(degs2)}",
                 className="text-muted small mb-2"
-            )
-        else:
-            deg_counts_info = html.P(
-                f"DEG counts - {names[0]}: {len(degs1)}, {names[1]}: {len(degs2)}, {names[2]}: {len(degs3)}",
-                className="text-muted small mb-2"
-            )
-        
-        # Calculate overlaps first
-        if n_comparisons == 2:
-            only1 = degs1 - degs2
-            only2 = degs2 - degs1
-            overlap = degs1 & degs2
-            
-            overlaps_data = {
-                'only_1': list(only1),
-                'only_2': list(only2),
-                'overlap': list(overlap)
-            }
-            
-        else:  # n_comparisons == 3
-            only1 = degs1 - degs2 - degs3
-            only2 = degs2 - degs1 - degs3
-            only3 = degs3 - degs1 - degs2
-            overlap12 = (degs1 & degs2) - degs3
-            overlap13 = (degs1 & degs3) - degs2
-            overlap23 = (degs2 & degs3) - degs1
-            overlap_all = degs1 & degs2 & degs3
-            
-            overlaps_data = {
-                'only_1': list(only1),
-                'only_2': list(only2),
-                'only_3': list(only3),
-                'overlap_12': list(overlap12),
-                'overlap_13': list(overlap13),
-                'overlap_23': list(overlap23),
-                'overlap_all': list(overlap_all)
-            }
-        
-        # Create Venn diagram (only 2 comparisons supported)
-        fig, ax = plt.subplots(figsize=(10, 8))
-        # Convert sets to lists for venn2
-        degs1_list = list(degs1)
-        degs2_list = list(degs2)
-            
-            # Create venn2 diagram - handle empty sets
-            if len(degs1_list) == 0 and len(degs2_list) == 0:
-                ax.text(0.5, 0.5, 'No DEGs found in either comparison', 
+            ax.text(0.5, 0.5, 'No DEGs found in either comparison', 
                        ha='center', va='center', fontsize=14, transform=ax.transAxes)
                 ax.set_xlim(0, 1)
                 ax.set_ylim(0, 1)
