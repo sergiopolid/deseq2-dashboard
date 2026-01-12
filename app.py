@@ -1342,9 +1342,9 @@ def update_venn_diagram(n_comparisons, file_path1, file_path2, fdr_threshold, lf
                         except (AttributeError, KeyError, ValueError):
                             pass  # Label doesn't exist for this region
             except Exception as venn_err:
-                    ax.text(0.5, 0.5, f'Error creating Venn diagram:\n{str(venn_err)}', 
-                           ha='center', va='center', fontsize=12, transform=ax.transAxes,
-                           bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+                ax.text(0.5, 0.5, f'Error creating Venn diagram:\n{str(venn_err)}', 
+                       ha='center', va='center', fontsize=12, transform=ax.transAxes,
+                       bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
         
         ax.set_title(f"Venn Diagram of DEGs\n(FDR < {fdr_threshold}, |log2FC| > {lfc_threshold})", 
                      fontsize=14, fontweight='bold', pad=20)
